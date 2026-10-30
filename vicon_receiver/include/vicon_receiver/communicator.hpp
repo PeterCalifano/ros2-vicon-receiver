@@ -4,6 +4,7 @@
 #include "vicon-datastream-sdk/DataStreamClient.h"
 #include "rclcpp/rclcpp.hpp"
 #include "publisher.hpp"
+#include "name_conversion.hpp"
 #include <iostream>
 #include <map>
 #include <chrono>
@@ -36,6 +37,10 @@ class Communicator : public rclcpp::Node
     map<string, Publisher> pub_map;
     boost::mutex mutex;
     std::set<std::string> pending_publishers;
+    /// Segments ("subject/segment") whose publisher could not be created; never retried.
+    std::set<std::string> failed_publishers;
+    /// Owner ("subject/segment") of each topic, to refuse two segments on the same topic.
+    std::map<std::string, std::string> topic_owners;
 
     geometry_msgs::msg::TransformStamped static_tf;
     string world_frame;
@@ -77,6 +82,15 @@ class Communicator : public rclcpp::Node
 
     // functions to create a segment publisher in a new thread
     void create_publisher(const string subject_name, const string segment_name);
+
+    /**
+     * @brief Create the PoseStamped publisher of one segment (run in a separate thread).
+     *
+     * The topic is "<namespace>/<subject>/<segment>" with the Vicon names converted by
+     * vicon_receiver::to_ros_name_token(). If the publisher cannot be created (invalid name, or
+     * topic already used by another segment whose names convert to the same tokens), the error is
+     * logged and the segment is never retried; TF is still broadcast for it.
+     */
     void create_publisher_thread(const string subject_name, const string segment_name);
 };
 

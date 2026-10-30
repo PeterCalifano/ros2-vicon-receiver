@@ -39,6 +39,8 @@ tests/
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
   unit/
     cpp/test_communicator_params.cpp   GoogleTest: parameter contract of the node
+    cpp/test_communicator_publishers.cpp  GoogleTest: publisher creation with Vicon names
+    cpp/test_name_conversion.cpp       GoogleTest: Vicon name -> ROS name conversion
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer, options, SDK names, frame gaps
     test_common_sh.py                  scripts/lib/common.sh functions
     test_scripts_cli.py                command-line handling of scripts/*.sh

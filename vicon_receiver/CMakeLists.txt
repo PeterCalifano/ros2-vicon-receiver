@@ -99,6 +99,7 @@ set_property(TARGET Boost::thread APPEND PROPERTY
 add_library(vicon_receiver_core STATIC
   src/communicator.cpp
   src/publisher.cpp
+  src/name_conversion.cpp
 )
 
 # Our public headers are needed by every target linking the library
@@ -224,6 +225,21 @@ if(BUILD_TESTING)
     )
     target_link_libraries(test_communicator_params vicon_receiver_core)
     ament_target_dependencies(test_communicator_params tf2_msgs)
+
+    # Conversion of Vicon names into ROS names (pure functions: default gtest main)
+    ament_add_gtest(test_name_conversion
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_name_conversion.cpp"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_name_conversion vicon_receiver_core)
+
+    # Publisher creation with Vicon names (needs rclcpp: own main())
+    ament_add_gtest(test_communicator_publishers
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_communicator_publishers.cpp"
+      SKIP_LINKING_MAIN_LIBRARIES
+      TIMEOUT 120
+    )
+    target_link_libraries(test_communicator_publishers vicon_receiver_core)
   else()
     message(STATUS "C++ unit tests not found at ${VICON_RECEIVER_CPP_TESTS_DIR}: skipped")
   endif()

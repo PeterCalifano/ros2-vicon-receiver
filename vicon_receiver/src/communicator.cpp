@@ -227,9 +227,11 @@ void Communicator::get_frame()
             // Use node clock to timestamp the transform
             tf_msg.header.stamp = this->get_clock()->now();
 
-            // Parent and child frames: Vicon global origin -> subject_segment
+            // Parent and child frames: Vicon global origin -> subject_segment. The Vicon names
+            // are converted to valid ROS names, the same way as in the topic names.
             tf_msg.header.frame_id = vicon_frame;
-            tf_msg.child_frame_id = subject_name + "_" + segment_name;
+            tf_msg.child_frame_id =
+                vicon_receiver::make_segment_frame_id(subject_name, segment_name);
 
             // Vicon translations are in millimeters; convert to meters for ROS
             tf_msg.transform.translation.x = trans.Translation[0] / 1000.0;
@@ -281,9 +283,14 @@ void Communicator::get_frame()
                 }
                 else
                 {
-                    // Create a publisher if it doesn't exist, de-duplicating concurrent attempts
+                    // Create a publisher if it doesn't exist, de-duplicating concurrent attempts.
+                    // Segments whose publisher failed once are not retried (error already logged).
                     std::string key = subject_name + "/" + segment_name;
-                    if (pending_publishers.find(key) == pending_publishers.end())
+                    if (failed_publishers.find(key) != failed_publishers.end())
+                    {
+                        lock.unlock();
+                    }
+                    else if (pending_publishers.find(key) == pending_publishers.end())
                     {
                         pending_publishers.insert(key);
                         lock.unlock();
@@ -313,17 +320,52 @@ void Communicator::create_publisher(const string subject_name, const string segm
 // Thread function to create a publisher
 void Communicator::create_publisher_thread(const string subject_name, const string segment_name)
 {
-    // Construct the topic name and key
-    std::string topic_name = ns_name + "/" + subject_name + "/" + segment_name;
+    // Construct the topic name (valid ROS names) and the key (original Vicon names)
+    std::string topic_name =
+        vicon_receiver::make_segment_topic_name(ns_name, subject_name, segment_name);
     std::string key = subject_name + "/" + segment_name;
 
     // Log publisher creation
-    string msg = "Creating publisher for segment " + segment_name + " from subject " + subject_name;
+    string msg = "Creating publisher for segment " + segment_name + " from subject " +
+                 subject_name + " on topic " + topic_name;
     cout << msg << endl;
 
-    // Create and store the publisher; then clear the pending flag
     boost::mutex::scoped_lock lock(mutex);
-    pub_map.insert(std::map<std::string, Publisher>::value_type(key, Publisher(topic_name, this)));
+
+    // Two segments whose names convert to the same tokens would share a topic: refuse the second
+    const auto owner_it = topic_owners.find(topic_name);
+    if (owner_it != topic_owners.end() && owner_it->second != key)
+    {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Not publishing segment '%s': topic '%s' is already used by segment '%s'. "
+                     "Rename one of them in Vicon Tracker.",
+                     key.c_str(),
+                     topic_name.c_str(),
+                     owner_it->second.c_str());
+        failed_publishers.insert(key);
+        pending_publishers.erase(key);
+        return;
+    }
+
+    // Create and store the publisher. This runs in a detached thread: an exception escaping it
+    // would terminate the whole node, so failures are logged and the segment is skipped.
+    try
+    {
+        pub_map.insert(
+            std::map<std::string, Publisher>::value_type(key, Publisher(topic_name, this)));
+        topic_owners[topic_name] = key;
+    }
+    catch (const std::exception &error)
+    {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Not publishing segment '%s': cannot create publisher on '%s': %s",
+                     key.c_str(),
+                     topic_name.c_str(),
+                     error.what());
+        failed_publishers.insert(key);
+    }
+
+    // Clear the pending flag
     pending_publishers.erase(key);
     lock.unlock();
 }
