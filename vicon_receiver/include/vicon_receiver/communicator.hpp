@@ -27,7 +27,7 @@ using namespace std;
 // Main Node class
 class Communicator : public rclcpp::Node
 {
-private:
+  private:
     ViconDataStreamSDK::CPP::Client vicon_client;
 
     string hostname;
@@ -36,7 +36,7 @@ private:
     map<string, Publisher> pub_map;
     boost::mutex mutex;
     std::set<std::string> pending_publishers;
-    
+
     geometry_msgs::msg::TransformStamped static_tf;
     string world_frame;
     string vicon_frame;
@@ -49,7 +49,7 @@ private:
 
     void publish_static_transform();
 
-public:
+  public:
     Communicator();
 
     // Initialises the connection to the DataStream server
@@ -58,7 +58,7 @@ public:
     // Stops the current connection to a DataStream server (if any).
     bool disconnect();
 
-    // Main loop that request frames from the currently connected DataStream server and send the 
+    // Main loop that request frames from the currently connected DataStream server and send the
     // received segment data to the Publisher class.
     void get_frame();
 

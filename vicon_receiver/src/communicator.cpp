@@ -11,8 +11,8 @@ Communicator::Communicator() : Node("vicon_client")
     this->declare_parameter<std::string>("namespace", "vicon");
     this->declare_parameter<std::string>("world_frame", "map");
     this->declare_parameter<std::string>("vicon_frame", "vicon");
-    this->declare_parameter<std::vector<double>>("map_xyz",  {0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("map_rpy",  {0.0, 0.0, 0.0});
+    this->declare_parameter<std::vector<double>>("map_xyz", {0.0, 0.0, 0.0});
+    this->declare_parameter<std::vector<double>>("map_rpy", {0.0, 0.0, 0.0});
     this->declare_parameter<bool>("map_rpy_in_degrees", false);
 
     // Retrieve parameters values
@@ -27,8 +27,10 @@ Communicator::Communicator() : Node("vicon_client")
     this->get_parameter("map_rpy_in_degrees", map_rpy_in_degrees);
 
     // Publish static transform from map to vicon origin
-    if (map_rpy_in_degrees) {
-        for (unsigned int i=0; i<map_rpy.size(); i++) {
+    if (map_rpy_in_degrees)
+    {
+        for (unsigned int i = 0; i < map_rpy.size(); i++)
+        {
             map_rpy[i] = map_rpy[i] * M_PI / 180.0;
         }
     }
@@ -50,11 +52,7 @@ void Communicator::publish_static_transform()
     static_tf.transform.translation.y = map_xyz[1];
     static_tf.transform.translation.z = map_xyz[2];
     tf2::Quaternion q;
-    q.setRPY(
-        map_rpy[0],
-        map_rpy[1],
-        map_rpy[2]
-    );
+    q.setRPY(map_rpy[0], map_rpy[1], map_rpy[2]);
     static_tf.transform.rotation.x = q.x();
     static_tf.transform.rotation.y = q.y();
     static_tf.transform.rotation.z = q.z();
@@ -65,7 +63,6 @@ void Communicator::publish_static_transform()
     string msg = "Published static transform from " + world_frame + " to " + vicon_frame;
     cout << msg << endl;
 }
-
 
 // Connect to the Vicon server
 bool Communicator::connect()
@@ -86,7 +83,8 @@ bool Communicator::connect()
             cout << msg << endl;
         }
     }
-    if (!rclcpp::ok()) {
+    if (!rclcpp::ok())
+    {
         std::cout << "Shutdown requested before connection established." << std::endl;
         return false;
     }
@@ -170,7 +168,8 @@ void Communicator::get_frame()
         for (unsigned int segment_index = 0; segment_index < segment_count; ++segment_index)
         {
             // Get the segment name
-            string segment_name = vicon_client.GetSegmentName(subject_name, segment_index).SegmentName;
+            string segment_name =
+                vicon_client.GetSegmentName(subject_name, segment_index).SegmentName;
 
             // Retrieve the segment's global position and rotation
             Output_GetSegmentGlobalTranslation trans =
@@ -207,7 +206,7 @@ void Communicator::get_frame()
                 pub_it = pub_map.find(subject_name + "/" + segment_name);
                 if (pub_it != pub_map.end())
                 {
-                    Publisher & pub = pub_it->second;
+                    Publisher &pub = pub_it->second;
 
                     if (pub.is_ready)
                     {
@@ -224,7 +223,7 @@ void Communicator::get_frame()
 
                         // Orientation: copy the quaternion (x, y, z, w) directly from the transform.
                         vicon_pose_msg.pose.orientation = tf_msg.transform.rotation;
-                        
+
                         // Update timestamp of static transform
                         static_tf.header.stamp = tf_msg.header.stamp;
 
@@ -256,7 +255,6 @@ void Communicator::get_frame()
 
             // Broadcast the transform
             tf_broadcaster_->sendTransform(tf_msg);
-
         }
     }
 }
@@ -287,7 +285,7 @@ void Communicator::create_publisher_thread(const string subject_name, const stri
 }
 
 // Main function
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     // Initialize the ROS 2 node
     rclcpp::init(argc, argv);
@@ -297,7 +295,8 @@ int main(int argc, char** argv)
     node->connect();
 
     // Continuously retrieve frames while ROS 2 is running
-    while (rclcpp::ok()){
+    while (rclcpp::ok())
+    {
         node->get_frame();
     }
 

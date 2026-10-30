@@ -7,13 +7,13 @@
 // Class that allows segment data to be published in a ROS2 topic.
 class Publisher
 {
-private:
+  private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr position_publisher_;
 
-public:
+  public:
     bool is_ready = false;
 
-    Publisher(std::string topic_name, rclcpp::Node* node);
+    Publisher(std::string topic_name, rclcpp::Node *node);
 
     // Publishes the given position in the ROS2 topic whose name is indicated in
     // the constructor.
