@@ -1,19 +1,62 @@
+/**
+ * @file communicator.cpp
+ * @author OPT4SMART group (original), PeterC (petercalifano.gs@gmail.com) (modifications)
+ * @brief ROS 2 node that pulls frames from a Vicon DataStream server and publishes them as
+ *        PoseStamped topics and TF.
+ * @version 1.1.0
+ * @date 2026-10-30
+ */
+
 #include "vicon_receiver/communicator.hpp"
+
+#include <stdexcept>
 
 using namespace ViconDataStreamSDK::CPP;
 
-// Constructor for the Communicator class
-Communicator::Communicator() : Node("vicon_client")
+namespace
 {
-    // Declare parameters for hostname, buffer size, and namespace
-    this->declare_parameter<std::string>("hostname", "127.0.0.1");
-    this->declare_parameter<int>("buffer_size", 200);
-    this->declare_parameter<std::string>("namespace", "vicon");
-    this->declare_parameter<std::string>("world_frame", "map");
-    this->declare_parameter<std::string>("vicon_frame", "vicon");
-    this->declare_parameter<std::vector<double>>("map_xyz", {0.0, 0.0, 0.0});
-    this->declare_parameter<std::vector<double>>("map_rpy", {0.0, 0.0, 0.0});
-    this->declare_parameter<bool>("map_rpy_in_degrees", false);
+    /// Name of the node; also the top-level key of the parameters file.
+    const char *const kNodeName = "vicon_client";
+
+    /**
+     * @brief Check that a vector-valued parameter has the expected number of elements.
+     *
+     * @param name           Parameter name, used in the error message.
+     * @param values         Parameter value read from the parameters file.
+     * @param expected_size  Required number of elements.
+     * @throws std::invalid_argument if the size does not match.
+     */
+    void require_vector_size(const std::string &name,
+                             const std::vector<double> &values,
+                             const std::size_t expected_size)
+    {
+        if (values.size() == expected_size)
+        {
+            return;
+        }
+
+        const std::string message = "parameter '" + name + "' must have " +
+                                    std::to_string(expected_size) + " elements, got " +
+                                    std::to_string(values.size());
+        throw std::invalid_argument(message);
+    }
+} // namespace
+
+// Constructor for the Communicator class
+Communicator::Communicator() : Node(kNodeName)
+{
+    // Parameters are declared WITHOUT default values on purpose: the parameters file
+    // (config/vicon_client.yaml) is the single source of truth. If an entry is missing or
+    // has the wrong type, rclcpp throws rclcpp::exceptions::InvalidParameterTypeException,
+    // reported in main().
+    this->declare_parameter<std::string>("hostname");
+    this->declare_parameter<int>("buffer_size");
+    this->declare_parameter<std::string>("namespace");
+    this->declare_parameter<std::string>("world_frame");
+    this->declare_parameter<std::string>("vicon_frame");
+    this->declare_parameter<std::vector<double>>("map_xyz");
+    this->declare_parameter<std::vector<double>>("map_rpy");
+    this->declare_parameter<bool>("map_rpy_in_degrees");
 
     // Retrieve parameters values
     this->get_parameter("hostname", hostname);
@@ -25,6 +68,10 @@ Communicator::Communicator() : Node("vicon_client")
     this->get_parameter("map_xyz", map_xyz);
     this->get_parameter("map_rpy", map_rpy);
     this->get_parameter("map_rpy_in_degrees", map_rpy_in_degrees);
+
+    // The static map -> vicon transform needs exactly one value per axis
+    require_vector_size("map_xyz", map_xyz, 3);
+    require_vector_size("map_rpy", map_rpy, 3);
 
     // Publish static transform from map to vicon origin
     if (map_rpy_in_degrees)
@@ -284,12 +331,51 @@ void Communicator::create_publisher_thread(const string subject_name, const stri
     lock.unlock();
 }
 
+/**
+ * @brief Report an invalid or incomplete parameters file and shut ROS 2 down.
+ *
+ * @param reason  Description of the problem (typically the exception message).
+ * @return Process exit code to return from main().
+ */
+static int report_parameter_error(const std::string &reason)
+{
+    const rclcpp::Logger logger = rclcpp::get_logger(kNodeName);
+    RCLCPP_FATAL(logger, "Invalid node configuration: %s", reason.c_str());
+    RCLCPP_FATAL(logger,
+                 "Start the node with '--ros-args --params-file config/vicon_client.yaml' "
+                 "(or use scripts/launch.sh) and set every parameter with the right type.");
+    rclcpp::shutdown();
+    return 1;
+}
+
 // Main function
 int main(int argc, char **argv)
 {
     // Initialize the ROS 2 node
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<Communicator>();
+
+    // Parameter problems surface as exceptions while constructing the node: report them
+    // clearly instead of aborting with an uncaught exception.
+    std::shared_ptr<Communicator> node;
+    try
+    {
+        node = std::make_shared<Communicator>();
+    }
+    catch (const rclcpp::exceptions::UninitializedStaticallyTypedParameterException &error)
+    {
+        // Parameter missing from the parameters file (or no parameters file at all)
+        return report_parameter_error(error.what());
+    }
+    catch (const rclcpp::exceptions::InvalidParameterTypeException &error)
+    {
+        // Parameter present but of the wrong type (e.g. 0 instead of 0.0 for a double)
+        return report_parameter_error(error.what());
+    }
+    catch (const std::invalid_argument &error)
+    {
+        // Parameter value rejected by the node's own checks (e.g. wrong vector size)
+        return report_parameter_error(error.what());
+    }
 
     // Connect to the Vicon server
     node->connect();

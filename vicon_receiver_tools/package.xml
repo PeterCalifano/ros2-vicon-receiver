@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>vicon_receiver_tools</name>
+  <version>0.1.0</version>
+  <description>
+    Python tools of the vicon_receiver repository: access to the node parameters file and network
+    diagnostics used by the scripts in scripts/.
+  </description>
+  <maintainer email="petercalifano.gs@gmail.com">PeterC</maintainer>
+  <license>GNU General Public License v3.0</license>
+
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
