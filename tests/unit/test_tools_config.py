@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import CONFIG_FILE
+from conftest import CONFIG_FILE, Load_default_parameters
 from vicon_receiver_tools.config import (
     ConfigError,
     Format_value,
@@ -119,7 +119,7 @@ def test_main_prints_value(capsys: pytest.CaptureFixture[str]) -> None:
     exit_code_ = Main([str(CONFIG_FILE), "hostname"])
     captured_ = capsys.readouterr()
     assert exit_code_ == 0
-    assert captured_.out == "192.168.10.1\n"
+    assert captured_.out == f"{Load_default_parameters()['hostname']}\n"
     assert captured_.err == ""
 
 

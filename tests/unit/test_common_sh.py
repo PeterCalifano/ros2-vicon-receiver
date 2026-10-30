@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ShellRunner, TcpListener
+from conftest import Load_default_parameters, ShellRunner, TcpListener
 
 # Canned output of "ip -o -4 addr show" for a machine on the Vicon network (eth9) and an
 # office network (eth4)
@@ -115,10 +115,10 @@ def test_read_config_param_reads_hostname(
 
 
 def test_read_config_param_reads_repository_config(shell: ShellRunner) -> None:
-    """The repository config points at the default Vicon Tracker address."""
+    """The hostname of the repository config is read as written in the YAML."""
     result_ = shell.run_common('read_config_param "$DEFAULT_CONFIG_FILE" hostname')
     assert result_.returncode == 0, result_.stderr
-    assert result_.stdout.strip() == "192.168.10.1"
+    assert result_.stdout.strip() == Load_default_parameters()["hostname"]
 
 
 def test_read_config_param_missing_key(

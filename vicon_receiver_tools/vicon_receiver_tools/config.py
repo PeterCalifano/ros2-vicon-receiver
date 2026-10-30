@@ -17,7 +17,7 @@ problem on stderr and exits with 1.
 Example::
 
     $ python3 -m vicon_receiver_tools.config config/vicon_client.yaml hostname
-    192.168.10.1
+    10.250.223.40
 """
 
 from __future__ import annotations

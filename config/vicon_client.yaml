@@ -14,7 +14,8 @@ vicon_client:
   ros__parameters:
     # Vicon Tracker PC running the DataStream server (TCP). Optional ":port",
     # the DataStream server listens on port 801 by default.
-    hostname: "192.168.10.1"
+    # 10.250.223.40: the Vicon Tracker PC on the lab network.
+    hostname: "10.250.223.40"
 
     # Number of frames buffered by the Vicon SDK client.
     buffer_size: 200
