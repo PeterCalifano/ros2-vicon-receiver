@@ -40,6 +40,7 @@ WORKSPACE_SETUP_FILE: Path = REPO_ROOT / "install" / "setup.bash"
 NODE_EXECUTABLE: Path = (
     REPO_ROOT / "install" / "vicon_receiver" / "lib" / "vicon_receiver" / "vicon_client"
 )
+PROBE_EXECUTABLE: Path = NODE_EXECUTABLE.with_name("vicon_probe")
 
 # Top-level key and parameters section of the parameters file
 NODE_NAME: str = "vicon_client"

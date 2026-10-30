@@ -39,6 +39,7 @@ tests/
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
   unit/
     cpp/test_communicator_params.cpp   GoogleTest: parameter contract of the node
+    cpp/test_probe_*.cpp               GoogleTest: probe JSON writer, options, SDK names, frame gaps
     test_common_sh.py                  scripts/lib/common.sh functions
     test_scripts_cli.py                command-line handling of scripts/*.sh
     test_static_checks.py              shellcheck and clang-format (skipped if not installed)
@@ -47,6 +48,7 @@ tests/
   integration/
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)
     test_launch_sh.py           launch.sh: reachability gate and node start-up
+    test_probe.py               vicon_probe and probe.sh: CLI, connection failures, live recording
 ```
 
 ## How the C++ tests are built
@@ -63,6 +65,13 @@ never connect to a Vicon server.
 
 Tests marked `integration` need ROS 2 and the built workspace. They are skipped (with the reason)
 when either is missing. Run only those with `python3 -m pytest tests -m integration`.
+
+Tests marked `vicon_live` record from a real Vicon DataStream server and are skipped unless
+`VICON_LIVE_HOST` is set:
+
+```bash
+VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live
+```
 
 ## Developer tools
 

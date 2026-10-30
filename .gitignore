@@ -30,3 +30,6 @@ __pycache__/
 
 # Test caches
 .pytest_cache/
+
+# Probe recordings (scripts/probe.sh)
+probe_output/

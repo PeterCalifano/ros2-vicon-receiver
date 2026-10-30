@@ -129,6 +129,34 @@ add_executable(vicon_client
 )
 target_link_libraries(vicon_client vicon_receiver_core)
 
+###########################################################
+# --- Probe (no ROS) ---
+# vicon_probe records everything a DataStream server sends (scripts/probe.sh).
+# It only needs the Vicon SDK. Its code is a static library so the unit tests
+# can link the testable parts (JSON writer, options, names, frame gaps).
+add_library(vicon_probe_core STATIC
+  src/probe/frame_gap.cpp
+  src/probe/json_writer.cpp
+  src/probe/probe_options.cpp
+  src/probe/sdk_names.cpp
+  src/probe/vicon_probe.cpp
+)
+target_include_directories(vicon_probe_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+# The probe does not use Boost itself, but the SDK library needs the vendored
+# Boost thread/chrono libraries and has no runpath: they must be on the link line.
+target_link_libraries(vicon_probe_core PUBLIC
+  ViconDataStreamSDK::ViconDataStreamSDK_CPP
+  Boost::thread Boost::chrono
+)
+
+add_executable(vicon_probe
+  src/probe/probe_main.cpp
+)
+target_link_libraries(vicon_probe vicon_probe_core)
+
 # Runtime search path so the binary finds libs in the install tree
 set_target_properties(vicon_client PROPERTIES
   INSTALL_RPATH "\$ORIGIN/../lib"
@@ -156,8 +184,8 @@ install(DIRECTORY "${VICON_SDK_INCLUDE_DIR}/"
 install(DIRECTORY include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-# install the node and launch files
-install(TARGETS vicon_client RUNTIME 
+# install the node, the probe and the launch files
+install(TARGETS vicon_client vicon_probe RUNTIME
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
@@ -175,6 +203,18 @@ if(BUILD_TESTING)
   if(EXISTS "${VICON_RECEIVER_CPP_TESTS_DIR}")
     find_package(ament_cmake_gtest REQUIRED)
     find_package(tf2_msgs REQUIRED)
+
+    # Probe utilities (no ROS). The SDK library finds the vendored Boost only
+    # through the library path, so its directory is added for the test run.
+    ament_add_gtest(test_probe_core
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_json_writer.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_options.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_sdk_names.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_frame_gap.cpp"
+      APPEND_LIBRARY_DIRS "${BOOST_VENDOR_LIBDIR}"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_probe_core vicon_probe_core)
 
     # The test provides its own main() to initialise rclcpp once
     ament_add_gtest(test_communicator_params

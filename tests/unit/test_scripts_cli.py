@@ -13,7 +13,7 @@ import pytest
 from conftest import ShellRunner
 
 # Scripts with a command-line interface (lib/common.sh is sourced, not executed)
-SCRIPT_NAMES: list[str] = ["build.sh", "launch.sh", "format.sh"]
+SCRIPT_NAMES: list[str] = ["build.sh", "launch.sh", "probe.sh", "format.sh"]
 
 
 @pytest.mark.parametrize("script_name", SCRIPT_NAMES)

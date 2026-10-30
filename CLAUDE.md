@@ -18,6 +18,7 @@ scripts/build.sh            # installs ROS 2 Jazzy + deps via apt/rosdep if miss
 scripts/launch.sh           # checks Vicon reachability, then runs the node with config/vicon_client.yaml
 scripts/launch.sh -c FILE --no-check -- --log-level debug
 scripts/format.sh [--check] # clang-format (CLANG_FORMAT=... to pick the binary)
+scripts/probe.sh [--host HOST[:PORT]] [-n FRAMES] [-o FILE]   # record what the server sends (JSON, no ROS)
 ```
 
 Manual equivalent (ROS sourced, from the repo root): `python3 -m colcon build --base-paths vicon_receiver vicon_receiver_tools --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then `ros2 run vicon_receiver vicon_client --ros-args --params-file config/vicon_client.yaml`.
@@ -37,7 +38,7 @@ source install/setup.bash && build/vicon_receiver/test_communicator_params --gte
 
 - All tests live in `tests/` (see `tests/README.md`). C++ tests (GoogleTest) are in `tests/unit/cpp/` but compiled by `vicon_receiver/CMakeLists.txt` under `BUILD_TESTING` (skipped if the folder is absent); `scripts/build.sh` builds with `BUILD_TESTING=OFF`. `colcon test` runs only `vicon_receiver`; the tools package is tested by pytest, importing it from its sources (`conftest.py` adds it to `sys.path`).
 - No Vicon needed: the network is faked with a local TCP listener, the unassigned 192.0.2.1, or the fake `ip`/`timeout` in `tests/fixtures/fake_bin/` (driven by `FAKE_*` env vars).
-- Integration tests (`-m integration`) need ROS + the built workspace and skip otherwise. `tests/unit/test_static_checks.py` runs shellcheck/clang-format if installed (also looks in `build/.devtools/bin`; never put that venv on `PATH`, its `python3` lacks colcon).
+- Integration tests (`-m integration`) need ROS + the built workspace and skip otherwise. Tests marked `vicon_live` need a real server: `VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live`. `tests/unit/test_static_checks.py` runs shellcheck/clang-format if installed (also looks in `build/.devtools/bin`; never put that venv on `PATH`, its `python3` lacks colcon).
 
 ## Configuration
 
@@ -67,6 +68,17 @@ Runtime flow:
 4. Publishers are created lazily. The first time a `subject/segment` key is seen, it is added to `pending_publishers` and a detached `boost::thread` runs `create_publisher_thread`, which inserts into `pub_map` under `mutex`. `get_frame()` uses a `scoped_try_lock`, so pose publishing for a segment is skipped (TF is still sent) on frames where the lock is contended or the publisher isn't ready yet.
 
 Topic name: `<namespace>/<subject>/<segment>`. The launch argument is `topic_namespace` but the node parameter is `namespace`. `client.launch.py` still carries its own argument defaults (hostname `192.168.10.1`); `scripts/launch.sh` bypasses it and uses `ros2 run` with the YAML.
+
+## Probe (`vicon_probe`)
+
+Plain C++ executable (no rclcpp) in the same package, built from `vicon_probe_core` (`src/probe/`, `include/vicon_receiver/probe/`, namespace `vicon_probe`). It uses the **same vendored SDK and calls as the node**, so what it sees is what the node can get. It connects once (`ClientPull`), enables every stream, and writes one JSON document: probe/connection/stream/server/cameras/devices/subject structure, then per frame the frame numbers, receive time, latency total + per stage, timecode, per subject quality, segment poses with occlusion flags, markers with the camera IDs of their rays, labeled/unlabeled markers; SDK calls that fail are listed in `errors` arrays instead of being dropped. Units stay SDK-native (mm, quaternion x,y,z,w). Exit codes: 0 ok, 1 args, 2 connect failed, 3 output file, 4 stream lost. `scripts/probe.sh` adds the reachability check and writes to `probe_output/` (git-ignored). The SDK `.so` has no runpath and needs the vendored Boost: link `Boost::thread Boost::chrono` with anything linking only the SDK, and use `APPEND_LIBRARY_DIRS` for its gtests.
+
+What a live recording (2026-10-30, Tracker at 10.250.223.40 via DFKI LAN) showed — keep in mind for message design:
+- Subject/segment/marker names contain `-` (`g1-unitree-torso-cam`): sanitize before using them in ROS names.
+- `GetObjectQuality` is ~1.3, **not** the 0..1 the SDK docs claim; treat it as an opaque Tracker metric.
+- An occluded segment comes with an all-zero pose (quaternion `[0,0,0,0]`): never publish it as a valid pose.
+- Each marker is seen by 3–7 cameras (ray contributions): a usable per-marker quality signal.
+- Latency total ~31 ms (mostly "Data Delivered"); 100 Hz; no timecode, no camera calibration, no devices, no unlabeled markers from this Tracker.
 
 ## Vendored dependencies
 
