@@ -24,7 +24,20 @@ Manual equivalent (ROS sourced, from the repo root): `python3 -m colcon build --
 
 Inside the Dev Container, use the `.bashrc` aliases instead (`ros2-build`, `ros2-source`, `ros2-clean`, `ros2-rosdep`).
 
-There are no tests yet. Compiler warnings (`-Wall -Wextra -Wpedantic`) are the only static check. Running the node needs a reachable Vicon Tracker; without one, `connect()` loops on reconnect attempts (5 s SDK connect timeout each) until Ctrl+C. colcon installs per package: the node binary is `install/vicon_receiver/lib/vicon_receiver/vicon_client`.
+Running the node needs a reachable Vicon Tracker; without one, `connect()` loops on reconnect attempts (5 s SDK connect timeout each) until Ctrl+C. colcon installs per package: the node binary is `install/vicon_receiver/lib/vicon_receiver/vicon_client`.
+
+## Tests
+
+```bash
+tests/run_tests.sh                       # colcon build (BUILD_TESTING=ON) + colcon test + pytest
+tests/run_tests.sh --cpp | --python      # one side only; --no-build to skip the build
+python3 -m pytest tests/unit/test_common_sh.py -k refused   # single Python test (no ROS needed for tests/unit)
+source install/setup.bash && build/vicon_receiver/test_communicator_params --gtest_filter='*Missing*'   # single C++ test (needs the overlay for the vendored Boost/SDK libs)
+```
+
+- All tests live in `tests/` (see `tests/README.md`). C++ tests (GoogleTest) are in `tests/unit/cpp/` but compiled by `vicon_receiver/CMakeLists.txt` under `BUILD_TESTING` (skipped if the folder is absent); `scripts/build.sh` builds with `BUILD_TESTING=OFF`. `colcon test` runs only `vicon_receiver`; the tools package is tested by pytest, importing it from its sources (`conftest.py` adds it to `sys.path`).
+- No Vicon needed: the network is faked with a local TCP listener, the unassigned 192.0.2.1, or the fake `ip`/`timeout` in `tests/fixtures/fake_bin/` (driven by `FAKE_*` env vars).
+- Integration tests (`-m integration`) need ROS + the built workspace and skip otherwise. `tests/unit/test_static_checks.py` runs shellcheck/clang-format if installed (also looks in `build/.devtools/bin`; never put that venv on `PATH`, its `python3` lacks colcon).
 
 ## Configuration
 
@@ -41,9 +54,9 @@ There are no tests yet. Compiler warnings (`-Wall -Wextra -Wpedantic`) are the o
 
 ## Architecture
 
-Two classes, both in `vicon_receiver/src/`:
+Two classes in `vicon_receiver/src/`, compiled into the static library `vicon_receiver_core` (linked by the executable and the tests); `main.cpp` holds `main()` and the FATAL reporting of parameter errors.
 
-- **`Communicator`** (`communicator.cpp`, also contains `main` and the FATAL reporting of parameter errors) is the `rclcpp::Node`. It owns the `ViconDataStreamSDK::CPP::Client`, reads and validates parameters, publishes the static `world_frame → vicon_frame` TF once in the constructor, and runs the frame loop.
+- **`Communicator`** (`communicator.cpp`) is the `rclcpp::Node`. It owns the `ViconDataStreamSDK::CPP::Client`, reads and validates parameters, publishes the static `world_frame → vicon_frame` TF once in the constructor, and runs the frame loop. The constructor takes `rclcpp::NodeOptions` (tests inject parameter overrides) and never connects.
 - **`Publisher`** (`publisher.cpp`) is a thin wrapper around one `PoseStamped` publisher (QoS depth 10).
 
 Runtime flow:

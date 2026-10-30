@@ -50,7 +50,20 @@ class Communicator : public rclcpp::Node
     void publish_static_transform();
 
   public:
-    Communicator();
+    /// Name of the node; also the top-level key of the parameters file.
+    static constexpr const char *kNodeName = "vicon_client";
+
+    /**
+     * @brief Create the node, read and validate its parameters and publish the static
+     *        world_frame -> vicon_frame transform. Does not connect to the Vicon server.
+     *
+     * @param options  Node options; tests use them to inject parameter overrides.
+     * @throws rclcpp::exceptions::UninitializedStaticallyTypedParameterException if a parameter
+     *         is missing.
+     * @throws rclcpp::exceptions::InvalidParameterTypeException if a parameter has the wrong type.
+     * @throws std::invalid_argument if map_xyz or map_rpy does not have 3 elements.
+     */
+    explicit Communicator(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
     // Initialises the connection to the DataStream server
     bool connect();

@@ -241,13 +241,15 @@ clean_workspace()
 
 build_workspace()
 {
+    # Tests are not compiled here: tests/run_tests.sh rebuilds with BUILD_TESTING=ON
     info "Building ${PACKAGE_DIRS[*]} (${build_type})"
     python3 -m colcon build \
         --base-paths "${PACKAGE_DIRS[@]}" \
         --symlink-install \
         --cmake-args \
         "-DCMAKE_BUILD_TYPE=${build_type}" \
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" \
+        "-DBUILD_TESTING=OFF"
 }
 
 main()

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Fake 'timeout' command for the tests of scripts/lib/common.sh.
+#
+# check_vicon_reachable runs its TCP probe through 'timeout'. This fake does not
+# run the probe: it reproduces the outcome of a connection attempt, so every
+# failure branch can be tested without a real network:
+#
+#   FAKE_TIMEOUT_STDERR  message printed on stderr (e.g. "connect: Connection refused")
+#   FAKE_TIMEOUT_EXIT    exit status (124 = timed out, like the real command)
+# =============================================================================
+
+set -Eeuo pipefail
+
+if [[ -n "${FAKE_TIMEOUT_STDERR:-}" ]]; then
+    echo "${FAKE_TIMEOUT_STDERR}" >&2
+fi
+exit "${FAKE_TIMEOUT_EXIT:-0}"

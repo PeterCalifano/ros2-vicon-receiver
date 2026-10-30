@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Fake 'ip' command for the tests of scripts/lib/common.sh.
+#
+# Put tests/fixtures/fake_bin first in PATH to make the network state of the
+# machine deterministic. The output is selected with environment variables:
+#
+#   ip -o -4 addr show       prints $FAKE_IP_ADDR_OUTPUT
+#   ip -4 route get ADDRESS  prints $FAKE_IP_ROUTE_OUTPUT, or fails like the
+#                            real command when FAKE_IP_ROUTE_FAIL=1
+# =============================================================================
+
+set -Eeuo pipefail
+
+case "$*" in
+    "-o -4 addr show")
+        printf '%s\n' "${FAKE_IP_ADDR_OUTPUT:-}"
+        ;;
+    "-4 route get "*)
+        if [[ "${FAKE_IP_ROUTE_FAIL:-0}" == "1" ]]; then
+            echo "RTNETLINK answers: Network is unreachable" >&2
+            exit 2
+        fi
+        printf '%s\n' "${FAKE_IP_ROUTE_OUTPUT:-}"
+        ;;
+    *)
+        echo "fake ip: unsupported arguments: $*" >&2
+        exit 64
+        ;;
+esac

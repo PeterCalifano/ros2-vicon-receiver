@@ -93,31 +93,41 @@ set_property(TARGET Boost::thread APPEND PROPERTY
   INTERFACE_LINK_LIBRARIES Threads::Threads)
 
 ###########################################################
-# --- Node executable ---
-add_executable(vicon_client
+# --- Node library ---
+# The node implementation is compiled once into a static library, linked by the
+# executable and by the unit tests (which construct the node without main()).
+add_library(vicon_receiver_core STATIC
   src/communicator.cpp
   src/publisher.cpp
 )
 
-# Include our public headers when building this target
-target_include_directories(vicon_client PRIVATE
+# Our public headers are needed by every target linking the library
+target_include_directories(vicon_receiver_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-# Link dependencies (use imported targets consistently)
-target_link_libraries(vicon_client
+# Link dependencies (use imported targets consistently). PUBLIC because the
+# headers include the Vicon SDK and Boost headers.
+target_link_libraries(vicon_receiver_core PUBLIC
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::system Boost::thread Boost::chrono Boost::timer
 )
 
-ament_target_dependencies(vicon_client 
+ament_target_dependencies(vicon_receiver_core PUBLIC
   rclcpp
   geometry_msgs
   tf2
   tf2_ros
   tf2_geometry_msgs
 )
+
+###########################################################
+# --- Node executable ---
+add_executable(vicon_client
+  src/main.cpp
+)
+target_link_libraries(vicon_client vicon_receiver_core)
 
 # Runtime search path so the binary finds libs in the install tree
 set_target_properties(vicon_client PROPERTIES
@@ -152,5 +162,31 @@ install(TARGETS vicon_client RUNTIME
 
 install(DIRECTORY launch
         DESTINATION share/${PROJECT_NAME})
+
+###########################################################
+# --- Unit tests (GoogleTest) ---
+# The C++ unit tests live in the repository-level tests/ folder, next to the
+# Python tests, and are run by `colcon test` (see tests/run_tests.sh). They are
+# skipped when the package is built outside this repository (e.g. Dev Container
+# mount of vicon_receiver/ only).
+if(BUILD_TESTING)
+  set(VICON_RECEIVER_CPP_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/cpp")
+
+  if(EXISTS "${VICON_RECEIVER_CPP_TESTS_DIR}")
+    find_package(ament_cmake_gtest REQUIRED)
+    find_package(tf2_msgs REQUIRED)
+
+    # The test provides its own main() to initialise rclcpp once
+    ament_add_gtest(test_communicator_params
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_communicator_params.cpp"
+      SKIP_LINKING_MAIN_LIBRARIES
+      TIMEOUT 120
+    )
+    target_link_libraries(test_communicator_params vicon_receiver_core)
+    ament_target_dependencies(test_communicator_params tf2_msgs)
+  else()
+    message(STATUS "C++ unit tests not found at ${VICON_RECEIVER_CPP_TESTS_DIR}: skipped")
+  endif()
+endif()
 
 ament_package()
