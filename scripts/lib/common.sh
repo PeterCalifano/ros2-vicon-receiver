@@ -45,6 +45,10 @@ readonly VICON_DATASTREAM_PORT=801
 # Name of the calling script, used as prefix of every message
 SCRIPT_NAME="$(basename "$0")"
 
+# DDS configuration of this machine (vicon_configure_dds; WSL mirrored networking)
+# shellcheck source=scripts/lib/dds.sh
+source "${COMMON_SH_DIR}/dds.sh"
+
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------

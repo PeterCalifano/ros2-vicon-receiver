@@ -46,6 +46,14 @@ source install/setup.bash && build/vicon_receiver/test_communicator_params --gte
 - `scripts/lib/common.sh` holds the shared shell helpers: ROS/workspace checks, reading a parameter from the YAML, and `check_vicon_reachable` (TCP connect to the DataStream port 801 with cause-specific errors: unresolvable name, no route, refused, timeout + local-subnet report). Anything needing Python goes through `run_tools_module <module>`, which runs `vicon_receiver_tools` **from its sources** (`PYTHONPATH`), so the helpers work before the build; no inline Python in bash.
 - On this WSL machine (`networkingMode=mirrored`), a closed loopback port times out instead of refusing, so the "connection refused" branch can't be reproduced locally.
 
+## WSL mirrored networking and DDS
+
+WSL mirrored networking adds `ip rule ... ipproto tcp|udp lookup 127`, routing **all TCP/UDP to 127.0.0.1 to Windows** (`via ... dev loopback0`). With default settings, ROS 2 processes on this machine never discover each other, and the ros2 CLI daemon (TCP localhost) hangs.
+
+- Fix (no sudo): `config/fastdds_wsl.xml` restricts Fast DDS to the second `lo` address `10.255.255.254` (not redirected) + shared memory, with that address as initial peer. `scripts/lib/dds.sh` (`vicon_configure_dds`) detects the redirection (`ip -4 route get 127.0.0.1` not via `dev lo`), exports `FASTRTPS_/FASTDDS_DEFAULT_PROFILES_FILE` and sets `ROS_AUTOMATIC_DISCOVERY_RANGE=SYSTEM_DEFAULT` (LOCALHOST/OFF make rmw override the profile with 127.0.0.1 peers). A profile already set by the user is kept.
+- Used by `launch.sh`, `tests/run_tests.sh`, the pytest `ros_env` fixture. In a terminal: `source scripts/source_ros_env.sh`, then `ros2 topic list --no-daemon` / `ros2 topic echo --no-daemon ...` (`ros2 topic hz` has no daemon option and works).
+- Scope: ROS 2 traffic stays on this machine. `tests/integration/test_dds.py` guards it (two processes must exchange messages).
+
 ## Conventions
 
 - C++: `.clang-format` at the root (from gtsam_spaceNav: LLVM, Allman, 4 spaces, 100 cols, namespace bodies indented, no bin-packing). Doxygen file headers (`@file/@author/@brief/@version/@date`) and doc comments; one statement per line.

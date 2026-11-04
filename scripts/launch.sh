@@ -89,6 +89,8 @@ main()
     config_file="$(realpath "${config_file}")"
     require_ros
     require_install
+    # So that other ROS 2 processes on this machine (ros2 topic, recorder, viewer) see the node
+    vicon_configure_dds
 
     if [[ "${run_check}" == true ]]; then
         local host_spec=""

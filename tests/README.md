@@ -43,11 +43,13 @@ tests/
     cpp/test_name_conversion.cpp       GoogleTest: Vicon name -> ROS name conversion
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer, options, SDK names, frame gaps
     test_common_sh.py                  scripts/lib/common.sh functions
+    test_dds_sh.py                     scripts/lib/dds.sh (WSL mirrored networking detection/profile)
     test_scripts_cli.py                command-line handling of scripts/*.sh
     test_static_checks.py              shellcheck and clang-format (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
   integration/
+    test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)
     test_launch_sh.py           launch.sh: reachability gate and node start-up
     test_probe.py               vicon_probe and probe.sh: CLI, connection failures, live recording

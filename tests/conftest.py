@@ -33,6 +33,7 @@ if str(TOOLS_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_PYTHON_DIR))
 SCRIPTS_DIR: Path = REPO_ROOT / "scripts"
 COMMON_SH: Path = SCRIPTS_DIR / "lib" / "common.sh"
+DDS_SH: Path = SCRIPTS_DIR / "lib" / "dds.sh"
 CONFIG_FILE: Path = REPO_ROOT / "config" / "vicon_client.yaml"
 FAKE_BIN_DIR: Path = REPO_ROOT / "tests" / "fixtures" / "fake_bin"
 ROS_SETUP_FILE: Path = Path("/opt/ros/jazzy/setup.bash")
@@ -232,11 +233,17 @@ def tcp_listener() -> Iterator[TcpListener]:
 # ROS 2 environment (integration tests)
 # -------------------------------------------------------------------------------------------------
 def Load_ros_environment() -> dict[str, str]:
-    """Return the environment obtained by sourcing ROS 2 and the workspace overlay."""
+    """Return the environment obtained by sourcing ROS 2 and the workspace overlay.
+
+    The DDS configuration of the machine is applied as in the scripts (scripts/lib/dds.sh), so
+    that the ROS 2 processes started by the tests see each other also on WSL.
+    """
     command_ = (
         "set +u; "
         f'source "{ROS_SETUP_FILE}"; '
         f'source "{WORKSPACE_SETUP_FILE}"; '
+        f'source "{DDS_SH}"; '
+        "vicon_configure_dds >/dev/null; "
         "env -0"
     )
     output_ = subprocess.run(
@@ -264,8 +271,13 @@ def ros_env() -> dict[str, str]:
         pytest.skip(f"workspace not built ({NODE_EXECUTABLE} missing): run scripts/build.sh")
 
     environment_ = Load_ros_environment()
-    # Keep test traffic on this machine, away from other ROS 2 systems on the network
-    environment_["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "LOCALHOST"
+    # Keep test traffic on this machine, away from other ROS 2 systems on the network. With the
+    # WSL profile (scripts/lib/dds.sh) traffic is already local, and LOCALHOST would override the
+    # profile with redirected 127.0.0.1 peers: let the profile decide.
+    if environment_.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
+        environment_["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "SYSTEM_DEFAULT"
+    else:
+        environment_["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "LOCALHOST"
     return environment_
 
 

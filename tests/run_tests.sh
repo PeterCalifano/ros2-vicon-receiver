@@ -121,6 +121,8 @@ main()
     cd "${REPO_ROOT}"
     require_ros
     require_colcon
+    # Integration tests run several ROS 2 processes, which must see each other
+    vicon_configure_dds
 
     if [[ "${run_build}" == true ]]; then
         build_with_tests
