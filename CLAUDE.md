@@ -9,7 +9,7 @@ ROS 2 Jazzy packages that pull frames from a Vicon Tracker DataStream server and
 - `vicon_receiver` (C++17, `ament_cmake`): the node. Executable: `vicon_client`; launch file: `client.launch.py`.
 - `vicon_receiver_tools` (`ament_python`): Python tools used by the scripts (`config.py`: read the parameters file with PyYAML; `network.py`: local-subnet report). Future Python tooling (e.g. recording export) belongs here, not in `scripts/`.
 
-The scripts use the **repo root as the colcon workspace** (`colcon build --base-paths vicon_receiver vicon_receiver_tools`); `build/`, `install/`, `log/` land at the root and are git-ignored. The Dev Container instead bind-mounts `vicon_receiver/` to `/home/ubuntu/ros2_ws/src/ros2-vicon-receiver` and runs colcon from `/home/ubuntu/ros2_ws`.
+The scripts use the **repo root as the colcon workspace** (`colcon build --base-paths vicon_receiver vicon_receiver_tools`); `build/`, `install/`, `log/` land at the root and are git-ignored. The Dev Container instead bind-mounts the whole repository to `/home/ubuntu/ros2_ws/src/ros2-vicon-receiver` and runs colcon from `/home/ubuntu/ros2_ws` (the host's `build/`/`install/` contain `COLCON_IGNORE`).
 
 ## Build and run
 
@@ -75,7 +75,7 @@ Runtime flow:
 3. The same pose is then transformed with `tf2::doTransform` through the stored static TF, so **the `PoseStamped` topic is expressed in `world_frame`, while dynamic TF children are parented to `vicon_frame`**. Keep both paths consistent when changing frame handling.
 4. Publishers are created lazily. The first time a `subject/segment` key is seen, it is added to `pending_publishers` and a detached `boost::thread` runs `create_publisher_thread`, which inserts into `pub_map` under `mutex`. `get_frame()` uses a `scoped_try_lock`, so pose publishing for a segment is skipped (TF is still sent) on frames where the lock is contended or the publisher isn't ready yet.
 
-Topic name: `<namespace>/<subject>/<segment>`; TF child frame: `<subject>_<segment>`. Vicon names are converted by `vicon_receiver::to_ros_name_token()` (`name_conversion.hpp`): characters other than `[A-Za-z0-9_]` become `_`, names not starting with a letter get a `vicon` prefix (e.g. `g1-unitree-torso-cam` → `g1_unitree_torso_cam`). A publisher that cannot be created is logged and skipped (never retried); of two segments mapping to the same topic, the second is refused. The launch argument is `topic_namespace` but the node parameter is `namespace`. `client.launch.py` still carries its own argument defaults (hostname `192.168.10.1`); `scripts/launch.sh` bypasses it and uses `ros2 run` with the YAML.
+Topic name: `<namespace>/<subject>/<segment>`; TF child frame: `<subject>_<segment>`. Vicon names are converted by `vicon_receiver::to_ros_name_token()` (`name_conversion.hpp`): characters other than `[A-Za-z0-9_]` become `_`, names not starting with a letter get a `vicon` prefix (e.g. `g1-unitree-torso-cam` → `g1_unitree_torso_cam`). A publisher that cannot be created is logged and skipped (never retried); of two segments mapping to the same topic, the second is refused. `client.launch.py` has a single required argument, `params_file` (no parameter defaults of its own): `ros2 launch vicon_receiver client.launch.py params_file:=config/vicon_client.yaml`; `scripts/launch.sh` uses `ros2 run` with the same YAML after the reachability check.
 
 ## Probe (`vicon_probe`)
 

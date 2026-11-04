@@ -51,6 +51,7 @@ tests/
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)
+    test_launch_file.py         client.launch.py: only a required params_file argument
     test_launch_sh.py           launch.sh: reachability gate and node start-up
     test_probe.py               vicon_probe and probe.sh: CLI, connection failures, live recording
 ```
