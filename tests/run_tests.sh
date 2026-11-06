@@ -24,6 +24,7 @@ source "${TESTS_DIR}/../scripts/lib/common.sh"
 
 # Packages built and tested by colcon (same list as scripts/build.sh)
 readonly PACKAGE_DIRS=(
+    "vicon_receiver_msgs"
     "vicon_receiver"
     "vicon_receiver_tools"
 )

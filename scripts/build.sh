@@ -24,6 +24,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # Packages of this repository, relative to the repository root. Their system
 # dependencies (package.xml) are installed by rosdep.
 readonly PACKAGE_DIRS=(
+    "vicon_receiver_msgs"
     "vicon_receiver"
     "vicon_receiver_tools"
 )

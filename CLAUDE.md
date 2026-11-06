@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ROS 2 Jazzy packages that pull frames from a Vicon Tracker DataStream server and publish one `geometry_msgs/msg/PoseStamped` topic per subject/segment plus TF:
 
 - `vicon_receiver` (C++17, `ament_cmake`): the node. Executable: `vicon_client`; launch file: `client.launch.py`.
+- `vicon_receiver_msgs` (`ament_cmake`, rosidl): `ViconFrame` (one per Vicon frame: acquisition-time stamp, raw receive stamp, frame number, frames dropped, rate, latency total + stages, any_occluded) with `SubjectState` (name, ros_name, quality), `SegmentState` (pose in metres, occlusion mask) and `MarkerState` (position, occluded, camera_ids). Field layout pinned by `tests/integration/test_messages.py`.
 - `vicon_receiver_tools` (`ament_python`): Python tools used by the scripts (`config.py`: read the parameters file with PyYAML; `network.py`: local-subnet report). Future Python tooling (e.g. recording export) belongs here, not in `scripts/`.
 
-The scripts use the **repo root as the colcon workspace** (`colcon build --base-paths vicon_receiver vicon_receiver_tools`); `build/`, `install/`, `log/` land at the root and are git-ignored. The Dev Container instead bind-mounts the whole repository to `/home/ubuntu/ros2_ws/src/ros2-vicon-receiver` and runs colcon from `/home/ubuntu/ros2_ws` (the host's `build/`/`install/` contain `COLCON_IGNORE`).
+The scripts use the **repo root as the colcon workspace** (`colcon build --base-paths vicon_receiver_msgs vicon_receiver vicon_receiver_tools`); `build/`, `install/`, `log/` land at the root and are git-ignored. The Dev Container instead bind-mounts the whole repository to `/home/ubuntu/ros2_ws/src/ros2-vicon-receiver` and runs colcon from `/home/ubuntu/ros2_ws` (the host's `build/`/`install/` contain `COLCON_IGNORE`).
 
 ## Build and run
 
@@ -21,7 +22,7 @@ scripts/format.sh [--check] # clang-format (CLANG_FORMAT=... to pick the binary)
 scripts/probe.sh [--host HOST[:PORT]] [-n FRAMES] [-o FILE]   # record what the server sends (JSON, no ROS)
 ```
 
-Manual equivalent (ROS sourced, from the repo root): `python3 -m colcon build --base-paths vicon_receiver vicon_receiver_tools --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then `ros2 run vicon_receiver vicon_client --ros-args --params-file config/vicon_client.yaml`.
+Manual equivalent (ROS sourced, from the repo root): `python3 -m colcon build --base-paths vicon_receiver_msgs vicon_receiver vicon_receiver_tools --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then `ros2 run vicon_receiver vicon_client --ros-args --params-file config/vicon_client.yaml`.
 
 Inside the Dev Container, use the `.bashrc` aliases instead (`ros2-build`, `ros2-source`, `ros2-clean`, `ros2-rosdep`).
 

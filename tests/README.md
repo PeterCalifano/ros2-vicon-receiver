@@ -52,6 +52,7 @@ tests/
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
+    test_messages.py            vicon_receiver_msgs field names and types (interface pin)
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)
     test_launch_file.py         client.launch.py: only a required params_file argument
     test_launch_sh.py           launch.sh: reachability gate and node start-up
