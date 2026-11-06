@@ -1,18 +1,18 @@
 /**
- * @file frame_gap.hpp
+ * @file dropped_frame_counter.hpp
  * @author PeterC (petercalifano.gs@gmail.com)
  * @brief Detection of frames missed between consecutive Vicon frame numbers.
  * @version 0.1
  * @date 2026-10-30
  */
 
-#ifndef VICON_RECEIVER_PROBE_FRAME_GAP_HPP
-#define VICON_RECEIVER_PROBE_FRAME_GAP_HPP
+#ifndef VICON_RECEIVER_DROPPED_FRAME_COUNTER_HPP
+#define VICON_RECEIVER_DROPPED_FRAME_COUNTER_HPP
 
 #include <cstdint>
 #include <optional>
 
-namespace vicon_probe
+namespace vicon_receiver
 {
     /**
      * @brief Counts the frames missed by a client from the sequence of received frame numbers.
@@ -21,7 +21,7 @@ namespace vicon_probe
      * k - 1 frames were not received. A frame number that does not increase (server restarted, or
      * the same frame delivered twice) is counted as a discontinuity and restarts the sequence.
      */
-    class FrameGapTracker
+    class DroppedFrameCounter
     {
       public:
         /**
@@ -48,6 +48,6 @@ namespace vicon_probe
         std::uint64_t missed_ = 0;
         std::uint64_t discontinuities_ = 0;
     };
-} // namespace vicon_probe
+} // namespace vicon_receiver
 
-#endif // VICON_RECEIVER_PROBE_FRAME_GAP_HPP
+#endif // VICON_RECEIVER_DROPPED_FRAME_COUNTER_HPP

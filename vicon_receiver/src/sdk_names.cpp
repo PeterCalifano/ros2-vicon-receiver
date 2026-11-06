@@ -6,9 +6,9 @@
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/probe/sdk_names.hpp"
+#include "vicon_receiver/sdk_names.hpp"
 
-namespace vicon_probe
+namespace vicon_receiver
 {
     namespace sdk = ViconDataStreamSDK::CPP;
 
@@ -156,4 +156,4 @@ namespace vicon_probe
         }
         return unknown_value_name(static_cast<int>(device_type));
     }
-} // namespace vicon_probe
+} // namespace vicon_receiver

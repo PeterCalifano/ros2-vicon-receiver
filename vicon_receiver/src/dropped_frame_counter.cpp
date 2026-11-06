@@ -1,16 +1,16 @@
 /**
- * @file frame_gap.cpp
+ * @file dropped_frame_counter.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
  * @brief Detection of frames missed between consecutive Vicon frame numbers.
  * @version 0.1
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/probe/frame_gap.hpp"
+#include "vicon_receiver/dropped_frame_counter.hpp"
 
-namespace vicon_probe
+namespace vicon_receiver
 {
-    std::uint64_t FrameGapTracker::record(std::uint64_t frame_number)
+    std::uint64_t DroppedFrameCounter::record(std::uint64_t frame_number)
     {
         received_ += 1;
 
@@ -34,18 +34,18 @@ namespace vicon_probe
         return gap;
     }
 
-    std::uint64_t FrameGapTracker::received() const
+    std::uint64_t DroppedFrameCounter::received() const
     {
         return received_;
     }
 
-    std::uint64_t FrameGapTracker::missed() const
+    std::uint64_t DroppedFrameCounter::missed() const
     {
         return missed_;
     }
 
-    std::uint64_t FrameGapTracker::discontinuities() const
+    std::uint64_t DroppedFrameCounter::discontinuities() const
     {
         return discontinuities_;
     }
-} // namespace vicon_probe
+} // namespace vicon_receiver

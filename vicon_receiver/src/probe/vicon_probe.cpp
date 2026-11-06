@@ -15,11 +15,18 @@
 #include <sstream>
 #include <thread>
 
-#include "vicon_receiver/probe/sdk_names.hpp"
+#include "vicon_receiver/sdk_names.hpp"
 
 namespace vicon_probe
 {
     namespace sdk = ViconDataStreamSDK::CPP;
+
+    // Readable SDK enumeration names, shared with the node
+    using vicon_receiver::device_type_name;
+    using vicon_receiver::direction_name;
+    using vicon_receiver::result_name;
+    using vicon_receiver::server_orientation_name;
+    using vicon_receiver::timecode_standard_name;
 
     namespace
     {
@@ -59,7 +66,7 @@ namespace vicon_probe
 
         /// Write a {"min", "mean", "max"} object for running statistics.
         void
-        write_statistics(JsonWriter &json, const std::string &name, const RunningStatistics &values)
+        write_statistics(JsonWriter &json, const std::string &name, const RunningMinMeanMax &values)
         {
             json.key(name);
             json.begin_object();
@@ -73,7 +80,7 @@ namespace vicon_probe
         /// Write the identification and calibration of one camera as a JSON object.
         void write_camera(const sdk::Client &client, JsonWriter &json, const std::string &camera)
         {
-            CallErrors errors;
+            FailedSdkCallLog errors;
             json.begin_object();
             json.member("name", camera);
 
@@ -179,7 +186,7 @@ namespace vicon_probe
                                      const std::string &subject,
                                      const std::string &segment)
         {
-            CallErrors errors;
+            FailedSdkCallLog errors;
             json.begin_object();
             json.member("name", segment);
 
@@ -231,7 +238,7 @@ namespace vicon_probe
                                            JsonWriter &json,
                                            const std::string &subject)
         {
-            CallErrors errors;
+            FailedSdkCallLog errors;
             json.begin_object();
             json.member("name", subject);
 
@@ -296,7 +303,7 @@ namespace vicon_probe
                                 const std::string &subject,
                                 const std::string &segment)
         {
-            CallErrors errors;
+            FailedSdkCallLog errors;
             bool occluded = false;
             json.begin_object();
             json.member("name", segment);
@@ -330,7 +337,7 @@ namespace vicon_probe
                                       const std::string &subject,
                                       const std::string &marker)
         {
-            CallErrors errors;
+            FailedSdkCallLog errors;
             json.begin_object();
             json.member("name", marker);
 
@@ -367,10 +374,10 @@ namespace vicon_probe
     } // namespace
 
     // ---------------------------------------------------------------------------------------------
-    // CallErrors
+    // FailedSdkCallLog
     // ---------------------------------------------------------------------------------------------
 
-    bool CallErrors::check(const std::string &call, sdk::Result::Enum result)
+    bool FailedSdkCallLog::check(const std::string &call, sdk::Result::Enum result)
     {
         if (result == sdk::Result::Success)
         {
@@ -380,12 +387,12 @@ namespace vicon_probe
         return false;
     }
 
-    bool CallErrors::empty() const
+    bool FailedSdkCallLog::empty() const
     {
         return failures_.empty();
     }
 
-    void CallErrors::write(JsonWriter &writer) const
+    void FailedSdkCallLog::write(JsonWriter &writer) const
     {
         if (failures_.empty())
         {
@@ -406,10 +413,10 @@ namespace vicon_probe
     }
 
     // ---------------------------------------------------------------------------------------------
-    // RunningStatistics
+    // RunningMinMeanMax
     // ---------------------------------------------------------------------------------------------
 
-    void RunningStatistics::add(double sample)
+    void RunningMinMeanMax::add(double sample)
     {
         count_ += 1;
         sum_ += sample;
@@ -417,22 +424,22 @@ namespace vicon_probe
         maximum_ = std::max(maximum_, sample);
     }
 
-    std::uint64_t RunningStatistics::count() const
+    std::uint64_t RunningMinMeanMax::count() const
     {
         return count_;
     }
 
-    double RunningStatistics::minimum() const
+    double RunningMinMeanMax::minimum() const
     {
         return count_ == 0 ? std::nan("") : minimum_;
     }
 
-    double RunningStatistics::mean() const
+    double RunningMinMeanMax::mean() const
     {
         return count_ == 0 ? std::nan("") : sum_ / static_cast<double>(count_);
     }
 
-    double RunningStatistics::maximum() const
+    double RunningMinMeanMax::maximum() const
     {
         return count_ == 0 ? std::nan("") : maximum_;
     }
@@ -531,7 +538,7 @@ namespace vicon_probe
     {
         console_ << "Connecting to " << options_.host << " ..." << std::endl;
 
-        CallErrors errors;
+        FailedSdkCallLog errors;
         json_.key("connection");
         json_.begin_object();
         json_.member("host", options_.host);
@@ -568,7 +575,7 @@ namespace vicon_probe
 
     void ViconProbe::enable_streams()
     {
-        CallErrors errors;
+        FailedSdkCallLog errors;
         json_.key("stream");
         json_.begin_object();
 
@@ -622,7 +629,7 @@ namespace vicon_probe
 
     void ViconProbe::write_server_information()
     {
-        CallErrors errors;
+        FailedSdkCallLog errors;
         json_.key("server");
         json_.begin_object();
 
@@ -742,14 +749,14 @@ namespace vicon_probe
         const double receive_time_s = unix_time_seconds();
         frames_recorded_ += 1;
 
-        CallErrors errors;
+        FailedSdkCallLog errors;
         std::string console_line;
         json_.begin_object();
 
         const sdk::Output_GetFrameNumber frame_number = client_.GetFrameNumber();
         if (errors.check("GetFrameNumber", frame_number.Result))
         {
-            const std::uint64_t missed = frame_gaps_.record(frame_number.FrameNumber);
+            const std::uint64_t missed = dropped_frames_.record(frame_number.FrameNumber);
             json_.member("frame_number", frame_number.FrameNumber);
             json_.member("frames_missed_before", missed);
             console_line = "frame " + std::to_string(frame_number.FrameNumber);
@@ -856,10 +863,10 @@ namespace vicon_probe
 
     void ViconProbe::write_subject_frame(const std::string &subject_name, std::string &console_line)
     {
-        SubjectStatistics &statistics = subject_statistics_[subject_name];
+        SubjectRecordingStatistics &statistics = subject_statistics_[subject_name];
         statistics.frames_seen += 1;
 
-        CallErrors errors;
+        FailedSdkCallLog errors;
         json_.begin_object();
         json_.member("name", subject_name);
         console_line += "  | " + subject_name;
@@ -923,7 +930,7 @@ namespace vicon_probe
         }
     }
 
-    void ViconProbe::write_frame_markers(CallErrors &frame_errors)
+    void ViconProbe::write_frame_markers(FailedSdkCallLog &frame_errors)
     {
         // Markers assigned to a subject, as reconstructed points
         json_.key("labeled_markers");
@@ -971,7 +978,7 @@ namespace vicon_probe
         json_.end_array();
     }
 
-    void ViconProbe::write_frame_centroids(CallErrors &frame_errors)
+    void ViconProbe::write_frame_centroids(FailedSdkCallLog &frame_errors)
     {
         json_.key("centroids");
         json_.begin_array();
@@ -992,7 +999,7 @@ namespace vicon_probe
             }
             const std::string camera = camera_output.CameraName;
 
-            CallErrors errors;
+            FailedSdkCallLog errors;
             json_.begin_object();
             json_.member("camera", camera);
             json_.key("centroids");
@@ -1033,8 +1040,8 @@ namespace vicon_probe
         json_.key("summary");
         json_.begin_object();
         json_.member("frames_recorded", frames_recorded_);
-        json_.member("frames_missed", frame_gaps_.missed());
-        json_.member("frame_number_discontinuities", frame_gaps_.discontinuities());
+        json_.member("frames_missed", dropped_frames_.missed());
+        json_.member("frame_number_discontinuities", dropped_frames_.discontinuities());
         json_.member("interrupted", interrupted);
         json_.member("stream_lost", stream_lost);
         write_statistics(json_, "latency_total_s", latency_s_);
@@ -1100,8 +1107,9 @@ namespace vicon_probe
 
     void ViconProbe::print_final_summary(bool interrupted, bool stream_lost)
     {
-        console_ << "\nRecorded " << frames_recorded_ << " frame(s): " << frame_gaps_.missed()
-                 << " missed, " << frame_gaps_.discontinuities() << " frame-number discontinuities";
+        console_ << "\nRecorded " << frames_recorded_ << " frame(s): " << dropped_frames_.missed()
+                 << " missed, " << dropped_frames_.discontinuities()
+                 << " frame-number discontinuities";
         if (interrupted)
         {
             console_ << " (interrupted)";

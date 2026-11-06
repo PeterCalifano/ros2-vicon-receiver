@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "vicon-datastream-sdk/DataStreamClient.h"
-#include "vicon_receiver/probe/frame_gap.hpp"
+#include "vicon_receiver/dropped_frame_counter.hpp"
 #include "vicon_receiver/probe/json_writer.hpp"
 #include "vicon_receiver/probe/probe_options.hpp"
 
@@ -42,7 +42,7 @@ namespace vicon_probe
      * Written as an "errors" member ({"GetObjectQuality": "InvalidSubjectName", ...}) so the
      * recording shows which data the server does not provide, instead of silently omitting it.
      */
-    class CallErrors
+    class FailedSdkCallLog
     {
       public:
         /**
@@ -62,7 +62,7 @@ namespace vicon_probe
     };
 
     /// Running minimum, mean and maximum of a quantity.
-    class RunningStatistics
+    class RunningMinMeanMax
     {
       public:
         /// Add one sample.
@@ -88,11 +88,11 @@ namespace vicon_probe
     };
 
     /// Per-subject statistics over the recorded frames, printed in the final summary.
-    struct SubjectStatistics
+    struct SubjectRecordingStatistics
     {
         std::uint64_t frames_seen = 0;           ///< Frames in which the subject was present
         std::uint64_t frames_with_occlusion = 0; ///< Frames with at least one occluded segment
-        RunningStatistics quality;               ///< GetObjectQuality values
+        RunningMinMeanMax quality;               ///< GetObjectQuality values
     };
 
     /**
@@ -155,10 +155,10 @@ namespace vicon_probe
         void write_subject_frame(const std::string &subject_name, std::string &console_line);
 
         /// Write the labeled and unlabeled markers of the current frame.
-        void write_frame_markers(CallErrors &frame_errors);
+        void write_frame_markers(FailedSdkCallLog &frame_errors);
 
         /// Write the 2D centroids of every camera in the current frame.
-        void write_frame_centroids(CallErrors &frame_errors);
+        void write_frame_centroids(FailedSdkCallLog &frame_errors);
 
         /// Write the "summary" member with the statistics of the recording.
         void write_summary(bool interrupted, bool stream_lost);
@@ -178,11 +178,11 @@ namespace vicon_probe
         std::uint64_t frames_recorded_ = 0;
 
         /// Failed calls that list cameras, devices or subjects (written in the summary)
-        CallErrors session_errors_;
+        FailedSdkCallLog session_errors_;
 
-        FrameGapTracker frame_gaps_;
-        RunningStatistics latency_s_;
-        std::map<std::string, SubjectStatistics> subject_statistics_;
+        vicon_receiver::DroppedFrameCounter dropped_frames_;
+        RunningMinMeanMax latency_s_;
+        std::map<std::string, SubjectRecordingStatistics> subject_statistics_;
     };
 
     /// Version of the SDK library as "major.minor.point.revision".

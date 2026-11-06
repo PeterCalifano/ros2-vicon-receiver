@@ -93,6 +93,22 @@ set_property(TARGET Boost::thread APPEND PROPERTY
   INTERFACE_LINK_LIBRARIES Threads::Threads)
 
 ###########################################################
+# --- Shared code (node and probe, no ROS) ---
+# Frame-gap detection, SDK enumeration names and the acquisition clock. Only the
+# Vicon SDK headers are used (no SDK calls), so no library is linked.
+add_library(vicon_common STATIC
+  src/acquisition_clock.cpp
+  src/dropped_frame_counter.cpp
+  src/sdk_names.cpp
+)
+target_include_directories(vicon_common PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  "${VICON_SDK_INCLUDE_DIR}"
+  "${VICON_SDK_INCLUDE_DIR}/vicon-datastream-sdk"
+)
+
+###########################################################
 # --- Node library ---
 # The node implementation is compiled once into a static library, linked by the
 # executable and by the unit tests (which construct the node without main()).
@@ -111,6 +127,7 @@ target_include_directories(vicon_receiver_core PUBLIC
 # Link dependencies (use imported targets consistently). PUBLIC because the
 # headers include the Vicon SDK and Boost headers.
 target_link_libraries(vicon_receiver_core PUBLIC
+  vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::system Boost::thread Boost::chrono Boost::timer
 )
@@ -134,12 +151,10 @@ target_link_libraries(vicon_client vicon_receiver_core)
 # --- Probe (no ROS) ---
 # vicon_probe records everything a DataStream server sends (scripts/probe.sh).
 # It only needs the Vicon SDK. Its code is a static library so the unit tests
-# can link the testable parts (JSON writer, options, names, frame gaps).
+# can link the testable parts (JSON writer, options).
 add_library(vicon_probe_core STATIC
-  src/probe/frame_gap.cpp
   src/probe/json_writer.cpp
   src/probe/probe_options.cpp
-  src/probe/sdk_names.cpp
   src/probe/vicon_probe.cpp
 )
 target_include_directories(vicon_probe_core PUBLIC
@@ -149,6 +164,7 @@ target_include_directories(vicon_probe_core PUBLIC
 # The probe does not use Boost itself, but the SDK library needs the vendored
 # Boost thread/chrono libraries and has no runpath: they must be on the link line.
 target_link_libraries(vicon_probe_core PUBLIC
+  vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::thread Boost::chrono
 )
@@ -196,8 +212,8 @@ install(DIRECTORY launch
 # --- Unit tests (GoogleTest) ---
 # The C++ unit tests live in the repository-level tests/ folder, next to the
 # Python tests, and are run by `colcon test` (see tests/run_tests.sh). They are
-# skipped when the package is built outside this repository (e.g. Dev Container
-# mount of vicon_receiver/ only).
+# skipped when the package is built outside this repository (e.g. when only
+# vicon_receiver/ is copied into another workspace).
 if(BUILD_TESTING)
   set(VICON_RECEIVER_CPP_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/cpp")
 
@@ -210,12 +226,19 @@ if(BUILD_TESTING)
     ament_add_gtest(test_probe_core
       "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_json_writer.cpp"
       "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_options.cpp"
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_sdk_names.cpp"
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_frame_gap.cpp"
       APPEND_LIBRARY_DIRS "${BOOST_VENDOR_LIBDIR}"
       TIMEOUT 60
     )
     target_link_libraries(test_probe_core vicon_probe_core)
+
+    # Shared code: frame gaps, SDK names, acquisition clock (pure, no SDK library)
+    ament_add_gtest(test_common
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_acquisition_clock.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_dropped_frame_counter.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_sdk_names.cpp"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_common vicon_common)
 
     # The test provides its own main() to initialise rclcpp once
     ament_add_gtest(test_vicon_receiver_node_params

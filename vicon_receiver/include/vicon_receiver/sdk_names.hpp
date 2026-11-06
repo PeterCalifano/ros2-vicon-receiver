@@ -1,19 +1,20 @@
 /**
  * @file sdk_names.hpp
  * @author PeterC (petercalifano.gs@gmail.com)
- * @brief Readable names of the Vicon DataStream SDK enumerations, for logs and probe output.
+ * @brief Readable names of the Vicon DataStream SDK enumerations, for logs, telemetry and the
+ *        probe output.
  * @version 0.1
  * @date 2026-10-30
  */
 
-#ifndef VICON_RECEIVER_PROBE_SDK_NAMES_HPP
-#define VICON_RECEIVER_PROBE_SDK_NAMES_HPP
+#ifndef VICON_RECEIVER_SDK_NAMES_HPP
+#define VICON_RECEIVER_SDK_NAMES_HPP
 
 #include <string>
 
 #include "vicon-datastream-sdk/DataStreamClient.h"
 
-namespace vicon_probe
+namespace vicon_receiver
 {
     /// Name of an SDK call result, e.g. "Success", "ClientConnectionFailed".
     std::string result_name(ViconDataStreamSDK::CPP::Result::Enum result);
@@ -30,6 +31,6 @@ namespace vicon_probe
 
     /// Name of a device type, e.g. "ForcePlate".
     std::string device_type_name(ViconDataStreamSDK::CPP::DeviceType::Enum device_type);
-} // namespace vicon_probe
+} // namespace vicon_receiver
 
-#endif // VICON_RECEIVER_PROBE_SDK_NAMES_HPP
+#endif // VICON_RECEIVER_SDK_NAMES_HPP
