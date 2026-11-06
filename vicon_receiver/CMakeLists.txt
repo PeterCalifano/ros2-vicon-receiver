@@ -97,8 +97,8 @@ set_property(TARGET Boost::thread APPEND PROPERTY
 # The node implementation is compiled once into a static library, linked by the
 # executable and by the unit tests (which construct the node without main()).
 add_library(vicon_receiver_core STATIC
-  src/communicator.cpp
-  src/publisher.cpp
+  src/vicon_receiver_node.cpp
+  src/segment_pose_publisher.cpp
   src/name_conversion.cpp
 )
 
@@ -218,13 +218,13 @@ if(BUILD_TESTING)
     target_link_libraries(test_probe_core vicon_probe_core)
 
     # The test provides its own main() to initialise rclcpp once
-    ament_add_gtest(test_communicator_params
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_communicator_params.cpp"
+    ament_add_gtest(test_vicon_receiver_node_params
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_vicon_receiver_node_params.cpp"
       SKIP_LINKING_MAIN_LIBRARIES
       TIMEOUT 120
     )
-    target_link_libraries(test_communicator_params vicon_receiver_core)
-    ament_target_dependencies(test_communicator_params tf2_msgs)
+    target_link_libraries(test_vicon_receiver_node_params vicon_receiver_core)
+    ament_target_dependencies(test_vicon_receiver_node_params tf2_msgs)
 
     # Conversion of Vicon names into ROS names (pure functions: default gtest main)
     ament_add_gtest(test_name_conversion
@@ -233,13 +233,13 @@ if(BUILD_TESTING)
     )
     target_link_libraries(test_name_conversion vicon_receiver_core)
 
-    # Publisher creation with Vicon names (needs rclcpp: own main())
-    ament_add_gtest(test_communicator_publishers
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_communicator_publishers.cpp"
+    # SegmentPosePublisher creation with Vicon names (needs rclcpp: own main())
+    ament_add_gtest(test_vicon_receiver_node_publishers
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_vicon_receiver_node_publishers.cpp"
       SKIP_LINKING_MAIN_LIBRARIES
       TIMEOUT 120
     )
-    target_link_libraries(test_communicator_publishers vicon_receiver_core)
+    target_link_libraries(test_vicon_receiver_node_publishers vicon_receiver_core)
   else()
     message(STATUS "C++ unit tests not found at ${VICON_RECEIVER_CPP_TESTS_DIR}: skipped")
   endif()

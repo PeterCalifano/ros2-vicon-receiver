@@ -33,7 +33,7 @@ Running the node needs a reachable Vicon Tracker; without one, `connect()` loops
 tests/run_tests.sh                       # colcon build (BUILD_TESTING=ON) + colcon test + pytest
 tests/run_tests.sh --cpp | --python      # one side only; --no-build to skip the build
 python3 -m pytest tests/unit/test_common_sh.py -k refused   # single Python test (no ROS needed for tests/unit)
-source install/setup.bash && build/vicon_receiver/test_communicator_params --gtest_filter='*Missing*'   # single C++ test (needs the overlay for the vendored Boost/SDK libs)
+source install/setup.bash && build/vicon_receiver/test_vicon_receiver_node_params --gtest_filter='*Missing*'   # single C++ test (needs the overlay for the vendored Boost/SDK libs)
 ```
 
 - All tests live in `tests/` (see `tests/README.md`). C++ tests (GoogleTest) are in `tests/unit/cpp/` but compiled by `vicon_receiver/CMakeLists.txt` under `BUILD_TESTING` (skipped if the folder is absent); `scripts/build.sh` builds with `BUILD_TESTING=OFF`. `colcon test` runs only `vicon_receiver`; the tools package is tested by pytest, importing it from its sources (`conftest.py` adds it to `sys.path`).
@@ -65,8 +65,8 @@ WSL mirrored networking adds `ip rule ... ipproto tcp|udp lookup 127`, routing *
 
 Two classes in `vicon_receiver/src/`, compiled into the static library `vicon_receiver_core` (linked by the executable and the tests); `main.cpp` holds `main()` and the FATAL reporting of parameter errors.
 
-- **`Communicator`** (`communicator.cpp`) is the `rclcpp::Node`. It owns the `ViconDataStreamSDK::CPP::Client`, reads and validates parameters, publishes the static `world_frame → vicon_frame` TF once in the constructor, and runs the frame loop. The constructor takes `rclcpp::NodeOptions` (tests inject parameter overrides) and never connects.
-- **`Publisher`** (`publisher.cpp`) is a thin wrapper around one `PoseStamped` publisher (QoS depth 10).
+- **`ViconReceiverNode`** (`vicon_receiver_node.cpp`) is the `rclcpp::Node`. It owns the `ViconDataStreamSDK::CPP::Client`, reads and validates parameters, publishes the static `world_frame → vicon_frame` TF once in the constructor, and runs the frame loop. The constructor takes `rclcpp::NodeOptions` (tests inject parameter overrides) and never connects.
+- **`SegmentPosePublisher`** (`segment_pose_publisher.cpp`) is a thin wrapper around one `PoseStamped` publisher (QoS depth 10).
 
 Runtime flow:
 

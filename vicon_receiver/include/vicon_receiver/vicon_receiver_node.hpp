@@ -1,9 +1,9 @@
-#if !defined(COMMUNICATOR_HPP)
-#define COMMUNICATOR_HPP
+#if !defined(VICON_RECEIVER_NODE_HPP)
+#define VICON_RECEIVER_NODE_HPP
 
 #include "vicon-datastream-sdk/DataStreamClient.h"
 #include "rclcpp/rclcpp.hpp"
-#include "publisher.hpp"
+#include "segment_pose_publisher.hpp"
 #include "name_conversion.hpp"
 #include <iostream>
 #include <map>
@@ -26,7 +26,7 @@
 using namespace std;
 
 // Main Node class
-class Communicator : public rclcpp::Node
+class ViconReceiverNode : public rclcpp::Node
 {
   private:
     ViconDataStreamSDK::CPP::Client vicon_client;
@@ -34,7 +34,7 @@ class Communicator : public rclcpp::Node
     string hostname;
     unsigned int buffer_size;
     string ns_name;
-    map<string, Publisher> pub_map;
+    map<string, SegmentPosePublisher> pub_map;
     boost::mutex mutex;
     std::set<std::string> pending_publishers;
     /// Segments ("subject/segment") whose publisher could not be created; never retried.
@@ -68,7 +68,7 @@ class Communicator : public rclcpp::Node
      * @throws rclcpp::exceptions::InvalidParameterTypeException if a parameter has the wrong type.
      * @throws std::invalid_argument if map_xyz or map_rpy does not have 3 elements.
      */
-    explicit Communicator(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+    explicit ViconReceiverNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
     // Initialises the connection to the DataStream server
     bool connect();
@@ -77,7 +77,7 @@ class Communicator : public rclcpp::Node
     bool disconnect();
 
     // Main loop that request frames from the currently connected DataStream server and send the
-    // received segment data to the Publisher class.
+    // received segment data to the SegmentPosePublisher class.
     void get_frame();
 
     // functions to create a segment publisher in a new thread
@@ -94,4 +94,4 @@ class Communicator : public rclcpp::Node
     void create_publisher_thread(const string subject_name, const string segment_name);
 };
 
-#endif // COMMUNICATOR_HPP
+#endif // VICON_RECEIVER_NODE_HPP

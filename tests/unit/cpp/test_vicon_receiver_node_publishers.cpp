@@ -1,5 +1,5 @@
 /**
- * @file test_communicator_publishers.cpp
+ * @file test_vicon_receiver_node_publishers.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
  * @brief Unit tests of the creation of segment publishers with Vicon names: names that are not
  *        valid in ROS (e.g. "g1-unitree-torso-cam") are converted instead of crashing the node,
@@ -9,7 +9,7 @@
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/communicator.hpp"
+#include "vicon_receiver/vicon_receiver_node.hpp"
 
 #include <gtest/gtest.h>
 
@@ -67,10 +67,10 @@ namespace
     }
 } // namespace
 
-TEST(CommunicatorPublishers, ViconNameWithDashesGetsValidTopic)
+TEST(ViconReceiverNodePublishers, ViconNameWithDashesGetsValidTopic)
 {
     // Regression: the node aborted with InvalidTopicNameError on the lab subject name
-    auto node = std::make_shared<Communicator>(make_options("test_dashes"));
+    auto node = std::make_shared<ViconReceiverNode>(make_options("test_dashes"));
 
     ASSERT_NO_THROW(node->create_publisher_thread("g1-unitree-torso-cam", "g1-unitree-torso-cam"));
 
@@ -78,10 +78,10 @@ TEST(CommunicatorPublishers, ViconNameWithDashesGetsValidTopic)
     EXPECT_EQ(wait_for_publishers(*node, topic_name, 1), 1U) << topic_name;
 }
 
-TEST(CommunicatorPublishers, CollidingNamesDoNotShareATopic)
+TEST(ViconReceiverNodePublishers, CollidingNamesDoNotShareATopic)
 {
     // "a-b" and "a_b" convert to the same token: only the first segment gets the topic
-    auto node = std::make_shared<Communicator>(make_options("test_collision"));
+    auto node = std::make_shared<ViconReceiverNode>(make_options("test_collision"));
 
     node->create_publisher_thread("a-b", "x");
     node->create_publisher_thread("a_b", "x");
@@ -94,12 +94,12 @@ TEST(CommunicatorPublishers, CollidingNamesDoNotShareATopic)
     EXPECT_EQ(node->count_publishers(topic_name), 1U);
 }
 
-TEST(CommunicatorPublishers, InvalidNamespaceIsReportedNotThrown)
+TEST(ViconReceiverNodePublishers, InvalidNamespaceIsReportedNotThrown)
 {
     // The namespace parameter is used as given: an invalid one makes publisher creation fail.
     // The failure must be logged and skipped, since an exception escaping the publisher thread
     // would terminate the node.
-    auto node = std::make_shared<Communicator>(make_options("bad namespace"));
+    auto node = std::make_shared<ViconReceiverNode>(make_options("bad namespace"));
 
     EXPECT_NO_THROW(node->create_publisher_thread("qcar", "qcar"));
 }

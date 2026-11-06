@@ -1,13 +1,13 @@
 /**
- * @file communicator.cpp
+ * @file vicon_receiver_node.cpp
  * @author OPT4SMART group (original), PeterC (petercalifano.gs@gmail.com) (modifications)
- * @brief Communicator node: pulls frames from a Vicon DataStream server and publishes them as
+ * @brief ViconReceiverNode node: pulls frames from a Vicon DataStream server and publishes them as
  *        PoseStamped topics and TF. The executable entry point is in main.cpp.
  * @version 1.1.0
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/communicator.hpp"
+#include "vicon_receiver/vicon_receiver_node.hpp"
 
 #include <stdexcept>
 
@@ -39,8 +39,8 @@ namespace
     }
 } // namespace
 
-// Constructor for the Communicator class
-Communicator::Communicator(const rclcpp::NodeOptions &options) : Node(kNodeName, options)
+// Constructor for the ViconReceiverNode class
+ViconReceiverNode::ViconReceiverNode(const rclcpp::NodeOptions &options) : Node(kNodeName, options)
 {
     // Parameters are declared WITHOUT default values on purpose: the parameters file
     // (config/vicon_client.yaml) is the single source of truth. If an entry is missing or
@@ -86,7 +86,7 @@ Communicator::Communicator(const rclcpp::NodeOptions &options) : Node(kNodeName,
 }
 
 // Publish the static transform from map to vicon origin
-void Communicator::publish_static_transform()
+void ViconReceiverNode::publish_static_transform()
 {
     static_tf.header.stamp = this->get_clock()->now();
     static_tf.header.frame_id = world_frame;
@@ -109,7 +109,7 @@ void Communicator::publish_static_transform()
 }
 
 // Connect to the Vicon server
-bool Communicator::connect()
+bool ViconReceiverNode::connect()
 {
     // Log connection attempt
     string msg = "Connecting to " + hostname + " ...";
@@ -157,7 +157,7 @@ bool Communicator::connect()
 }
 
 // Disconnect from the Vicon server
-bool Communicator::disconnect()
+bool ViconReceiverNode::disconnect()
 {
     // If already disconnected, return true
     if (!vicon_client.IsConnected().Connected)
@@ -188,7 +188,7 @@ bool Communicator::disconnect()
 }
 
 // Retrieve and process a frame of data from the Vicon server
-void Communicator::get_frame()
+void ViconReceiverNode::get_frame()
 {
     // Request a new frame
     vicon_client.GetFrame();
@@ -197,7 +197,7 @@ void Communicator::get_frame()
     // Get the number of subjects in the frame
     unsigned int subject_count = vicon_client.GetSubjectCount().SubjectCount;
 
-    map<string, Publisher>::iterator pub_it;
+    map<string, SegmentPosePublisher>::iterator pub_it;
 
     // Iterate through each subject
     for (unsigned int subject_index = 0; subject_index < subject_count; ++subject_index)
@@ -252,7 +252,7 @@ void Communicator::get_frame()
                 pub_it = pub_map.find(subject_name + "/" + segment_name);
                 if (pub_it != pub_map.end())
                 {
-                    Publisher &pub = pub_it->second;
+                    SegmentPosePublisher &pub = pub_it->second;
 
                     if (pub.is_ready)
                     {
@@ -311,14 +311,15 @@ void Communicator::get_frame()
 }
 
 // Create a publisher for a specific subject and segment
-void Communicator::create_publisher(const string subject_name, const string segment_name)
+void ViconReceiverNode::create_publisher(const string subject_name, const string segment_name)
 {
     // Launch a thread to create the publisher
-    boost::thread(&Communicator::create_publisher_thread, this, subject_name, segment_name);
+    boost::thread(&ViconReceiverNode::create_publisher_thread, this, subject_name, segment_name);
 }
 
 // Thread function to create a publisher
-void Communicator::create_publisher_thread(const string subject_name, const string segment_name)
+void ViconReceiverNode::create_publisher_thread(const string subject_name,
+                                                const string segment_name)
 {
     // Construct the topic name (valid ROS names) and the key (original Vicon names)
     std::string topic_name =
@@ -351,8 +352,8 @@ void Communicator::create_publisher_thread(const string subject_name, const stri
     // would terminate the whole node, so failures are logged and the segment is skipped.
     try
     {
-        pub_map.insert(
-            std::map<std::string, Publisher>::value_type(key, Publisher(topic_name, this)));
+        pub_map.insert(std::map<std::string, SegmentPosePublisher>::value_type(
+            key, SegmentPosePublisher(topic_name, this)));
         topic_owners[topic_name] = key;
     }
     catch (const std::exception &error)

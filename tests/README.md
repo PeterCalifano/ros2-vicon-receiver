@@ -38,8 +38,8 @@ tests/
     fake_bin/ip                 fake 'ip' (addresses, routes) driven by FAKE_IP_* variables
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
   unit/
-    cpp/test_communicator_params.cpp   GoogleTest: parameter contract of the node
-    cpp/test_communicator_publishers.cpp  GoogleTest: publisher creation with Vicon names
+    cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node
+    cpp/test_vicon_receiver_node_publishers.cpp  GoogleTest: publisher creation with Vicon names
     cpp/test_name_conversion.cpp       GoogleTest: Vicon name -> ROS name conversion
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer, options, SDK names, frame gaps
     test_common_sh.py                  scripts/lib/common.sh functions
@@ -61,7 +61,7 @@ tests/
 The test sources are in `tests/unit/cpp`, but they are compiled by the `vicon_receiver` package:
 its `CMakeLists.txt` adds them when `BUILD_TESTING` is on and the folder exists. The node code is
 built as the static library `vicon_receiver_core`, linked by both the `vicon_client` executable and
-the tests. The tests construct `Communicator` with `rclcpp::NodeOptions` parameter overrides and
+the tests. The tests construct `ViconReceiverNode` with `rclcpp::NodeOptions` parameter overrides and
 never connect to a Vicon server.
 
 `scripts/build.sh` builds with `BUILD_TESTING=OFF`, and `run_tests.sh` rebuilds with it `ON`.

@@ -1,7 +1,7 @@
 /**
- * @file test_communicator_params.cpp
+ * @file test_vicon_receiver_node_params.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
- * @brief Unit tests of the Communicator parameter contract: every parameter is required, types
+ * @brief Unit tests of the ViconReceiverNode parameter contract: every parameter is required, types
  *        and vector sizes are validated, and the static world_frame -> vicon_frame transform is
  *        built from map_xyz / map_rpy (radians or degrees). No Vicon server is needed: the node
  *        is constructed with parameter overrides and never connects.
@@ -9,7 +9,7 @@
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/communicator.hpp"
+#include "vicon_receiver/vicon_receiver_node.hpp"
 
 #include <gtest/gtest.h>
 
@@ -135,12 +135,12 @@ namespace
 // Valid configuration
 // -------------------------------------------------------------------------------------------------
 
-TEST(CommunicatorParams, ValidParametersAreAccepted)
+TEST(ViconReceiverNodeParams, ValidParametersAreAccepted)
 {
     const rclcpp::NodeOptions options = make_options(make_valid_parameters());
 
-    std::shared_ptr<Communicator> node;
-    ASSERT_NO_THROW(node = std::make_shared<Communicator>(options));
+    std::shared_ptr<ViconReceiverNode> node;
+    ASSERT_NO_THROW(node = std::make_shared<ViconReceiverNode>(options));
 
     // The values from the overrides are the ones the node reads
     EXPECT_EQ(node->get_parameter("hostname").as_string(), "192.168.10.1");
@@ -163,7 +163,7 @@ TEST_P(MissingParameterTest, MissingParameterIsRejected)
     const rclcpp::NodeOptions options =
         make_options(without_parameter(make_valid_parameters(), missing_name));
 
-    EXPECT_THROW(Communicator node(options),
+    EXPECT_THROW(ViconReceiverNode node(options),
                  rclcpp::exceptions::UninitializedStaticallyTypedParameterException);
 }
 
@@ -182,30 +182,32 @@ INSTANTIATE_TEST_SUITE_P(EveryParameter,
 // Wrong types
 // -------------------------------------------------------------------------------------------------
 
-TEST(CommunicatorParams, IntegerArrayForDoubleArrayIsRejected)
+TEST(ViconReceiverNodeParams, IntegerArrayForDoubleArrayIsRejected)
 {
     // In YAML, "[0, 0, 0]" is an integer array, while the node expects doubles ("[0.0, ...]")
     const rclcpp::Parameter integer_array("map_xyz", std::vector<int64_t>{0, 0, 0});
     const rclcpp::NodeOptions options =
         make_options(with_parameter(make_valid_parameters(), integer_array));
 
-    EXPECT_THROW(Communicator node(options), rclcpp::exceptions::InvalidParameterTypeException);
+    EXPECT_THROW(ViconReceiverNode node(options),
+                 rclcpp::exceptions::InvalidParameterTypeException);
 }
 
-TEST(CommunicatorParams, StringForIntegerIsRejected)
+TEST(ViconReceiverNodeParams, StringForIntegerIsRejected)
 {
     const rclcpp::Parameter string_value("buffer_size", "200");
     const rclcpp::NodeOptions options =
         make_options(with_parameter(make_valid_parameters(), string_value));
 
-    EXPECT_THROW(Communicator node(options), rclcpp::exceptions::InvalidParameterTypeException);
+    EXPECT_THROW(ViconReceiverNode node(options),
+                 rclcpp::exceptions::InvalidParameterTypeException);
 }
 
 // -------------------------------------------------------------------------------------------------
 // Vector sizes of the static transform parameters
 // -------------------------------------------------------------------------------------------------
 
-TEST(CommunicatorParams, TranslationWithTwoElementsIsRejected)
+TEST(ViconReceiverNodeParams, TranslationWithTwoElementsIsRejected)
 {
     const rclcpp::Parameter short_xyz("map_xyz", std::vector<double>{1.0, 2.0});
     const rclcpp::NodeOptions options =
@@ -213,7 +215,7 @@ TEST(CommunicatorParams, TranslationWithTwoElementsIsRejected)
 
     try
     {
-        Communicator node(options);
+        ViconReceiverNode node(options);
         FAIL() << "Expected std::invalid_argument for a 2-element map_xyz";
     }
     catch (const std::invalid_argument &error)
@@ -225,13 +227,13 @@ TEST(CommunicatorParams, TranslationWithTwoElementsIsRejected)
     }
 }
 
-TEST(CommunicatorParams, RotationWithFourElementsIsRejected)
+TEST(ViconReceiverNodeParams, RotationWithFourElementsIsRejected)
 {
     const rclcpp::Parameter long_rpy("map_rpy", std::vector<double>{0.0, 0.0, 0.0, 1.0});
     const rclcpp::NodeOptions options =
         make_options(with_parameter(make_valid_parameters(), long_rpy));
 
-    EXPECT_THROW(Communicator node(options), std::invalid_argument);
+    EXPECT_THROW(ViconReceiverNode node(options), std::invalid_argument);
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -271,7 +273,7 @@ TEST_P(StaticTransformTest, StaticTransformMatchesParameters)
                                 rclcpp::Parameter("map_rpy_in_degrees", test_case.rpy_in_degrees));
 
     // The constructor publishes the static transform
-    Communicator node(make_options(parameters));
+    ViconReceiverNode node(make_options(parameters));
 
     const std::optional<geometry_msgs::msg::TransformStamped> transform =
         wait_for_static_transform(vicon_frame);

@@ -7,7 +7,7 @@
  * @date 2026-10-30
  */
 
-#include "vicon_receiver/communicator.hpp"
+#include "vicon_receiver/vicon_receiver_node.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -23,7 +23,7 @@ namespace
      */
     int report_parameter_error(const std::string &reason)
     {
-        const rclcpp::Logger logger = rclcpp::get_logger(Communicator::kNodeName);
+        const rclcpp::Logger logger = rclcpp::get_logger(ViconReceiverNode::kNodeName);
         RCLCPP_FATAL(logger, "Invalid node configuration: %s", reason.c_str());
         RCLCPP_FATAL(logger,
                      "Start the node with '--ros-args --params-file config/vicon_client.yaml' "
@@ -41,10 +41,10 @@ int main(int argc, char **argv)
 
     // Parameter problems surface as exceptions while constructing the node: report them
     // clearly instead of aborting with an uncaught exception.
-    std::shared_ptr<Communicator> node;
+    std::shared_ptr<ViconReceiverNode> node;
     try
     {
-        node = std::make_shared<Communicator>();
+        node = std::make_shared<ViconReceiverNode>();
     }
     catch (const rclcpp::exceptions::UninitializedStaticallyTypedParameterException &error)
     {

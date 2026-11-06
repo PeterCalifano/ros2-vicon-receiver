@@ -18,7 +18,7 @@ from conftest import DEFAULT_TIMEOUT_S, NODE_EXECUTABLE, TcpListener, Run_until_
 
 pytestmark = pytest.mark.integration
 
-# Messages printed by the node (see vicon_receiver/src/main.cpp and communicator.cpp)
+# Messages printed by the node (see vicon_receiver/src/main.cpp and vicon_receiver_node.cpp)
 FATAL_PREFIX: str = "Invalid node configuration:"
 STATIC_TF_MESSAGE: str = "Published static transform"
 
