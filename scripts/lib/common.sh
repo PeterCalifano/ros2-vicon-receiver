@@ -36,6 +36,10 @@ readonly DEFAULT_CONFIG_FILE="${REPO_ROOT}/config/vicon_client.yaml"
 # from the sources, so they also work before the workspace is built.
 readonly TOOLS_PYTHON_DIR="${REPO_ROOT}/vicon_receiver_tools"
 
+# Conda environment of the Python tools (viewer, mount estimate, ...), created by scripts/build.sh.
+# Its name is only written in this file.
+readonly TOOLS_ENVIRONMENT_FILE="${REPO_ROOT}/environment.yml"
+
 # Name of the node, which is also the top-level key of the parameters file
 readonly VICON_NODE_NAME="vicon_client"
 
@@ -119,8 +123,8 @@ require_colcon()
 {
     if ! python3 -c "import colcon_core" >/dev/null 2>&1; then
         die "colcon is not available to $(command -v python3)." \
-            "If a Python virtual environment is active, deactivate it or recreate it" \
-            "with --system-site-packages, then run this script again."
+            "If a conda environment is active, deactivate it (conda deactivate): the workspace" \
+            "is built with the system Python of ROS 2. Then run this script again."
     fi
 }
 
@@ -133,6 +137,42 @@ run_tools_module()
     shift
     PYTHONPATH="${TOOLS_PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
         python3 -m "vicon_receiver_tools.${module}" "$@"
+}
+
+# Print the name of the conda environment of the Python tools.
+tools_env_name()
+{
+    sed -n 's/^name:[[:space:]]*//p' "${TOOLS_ENVIRONMENT_FILE}"
+}
+
+# Print the conda command, or nothing if conda is not installed.
+conda_command()
+{
+    echo "${CONDA_EXE:-$(command -v conda || true)}"
+}
+
+# Print the directory of the conda environment of the Python tools; nothing if it does not exist.
+# The environment does not have to be activated.
+tools_env_prefix()
+{
+    local conda_bin=""
+    conda_bin="$(conda_command)"
+    if [[ -n "${conda_bin}" ]]; then
+        "${conda_bin}" env list 2>/dev/null |
+            awk -v name="$(tools_env_name)" '$1 == name { print $NF }' || true
+    fi
+}
+
+# Print the Python interpreter of the tools environment; error if the environment does not exist.
+tools_env_python()
+{
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -z "${prefix}" || ! -x "${prefix}/bin/python" ]]; then
+        die "Conda environment '$(tools_env_name)' not found." \
+            "Create it with: conda env create -f ${TOOLS_ENVIRONMENT_FILE}"
+    fi
+    echo "${prefix}/bin/python"
 }
 
 # Make sure a parameters file exists.

@@ -20,6 +20,10 @@ scripts/launch.sh           # checks Vicon reachability, then runs the node with
 scripts/launch.sh -c FILE --no-check -- --log-level debug
 scripts/format.sh [--check] # clang-format (CLANG_FORMAT=... to pick the binary)
 scripts/probe.sh [--host HOST[:PORT]] [-n FRAMES] [-o FILE]   # record what the server sends (JSON, no ROS)
+scripts/fetch_g1_model.sh             # copy the G1 model (URDF + meshes) from pcalifano-u into models/g1 (git-ignored)
+scripts/estimate_mount.sh -r probe.json [--write]   # rough marker mount on the G1 -> config/g1_mount.yaml
+scripts/viz.sh                        # live viewer in the browser (viser), http://127.0.0.1:8080
+source scripts/source_ros_env.sh      # ROS + workspace + WSL DDS profile in an interactive shell
 ```
 
 Manual equivalent (ROS sourced, from the repo root): `python3 -m colcon build --base-paths vicon_receiver_msgs vicon_receiver vicon_receiver_tools --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then `ros2 run vicon_receiver vicon_client --ros-args --params-file config/vicon_client.yaml`.
@@ -38,8 +42,8 @@ source install/setup.bash && build/vicon_receiver/test_vicon_receiver_node_param
 ```
 
 - All tests live in `tests/` (see `tests/README.md`). C++ tests (GoogleTest) are in `tests/unit/cpp/` but compiled by `vicon_receiver/CMakeLists.txt` under `BUILD_TESTING` (skipped if the folder is absent); `scripts/build.sh` builds with `BUILD_TESTING=OFF`. `colcon test` runs only `vicon_receiver`; the tools package is tested by pytest, importing it from its sources (`conftest.py` adds it to `sys.path`).
-- No Vicon needed: the network is faked with a local TCP listener, the unassigned 192.0.2.1, or the fake `ip`/`timeout` in `tests/fixtures/fake_bin/` (driven by `FAKE_*` env vars).
-- Integration tests (`-m integration`) need ROS + the built workspace and skip otherwise. Tests marked `vicon_live` need a real server: `VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live`. `tests/unit/test_static_checks.py` runs shellcheck/clang-format if installed (also looks in `build/.devtools/bin`; never put that venv on `PATH`, its `python3` lacks colcon).
+- No Vicon needed: the network is faked with a local TCP listener, the unassigned 192.0.2.1, or the fake `ip`/`timeout`/`conda` in `tests/fixtures/fake_bin/` (driven by `FAKE_*` env vars).
+- Integration tests (`-m integration`) need ROS + the built workspace and skip otherwise. Tests marked `vicon_live` need a real server: `VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live`. `tests/unit/test_static_checks.py` runs shellcheck/clang-format if installed (pinned in the conda environment; never build with it activated, its `python3` lacks colcon).
 
 ## Configuration
 
@@ -101,6 +105,14 @@ What a live recording (2026-10-30, lab Tracker at 10.250.223.40) showed — keep
 - Latency total ~31 ms (mostly "Data Delivered"); 100 Hz; no timecode, no camera calibration, no devices, no unlabeled markers from this Tracker.
 - After connecting, the server first sends **1–2 frames left over from its previous session** (frame-number jump, received back to back). Hence `is_stale_previous_frame`: any jump within the first `kConnectionStartupFrames` (10) frames is stale leftovers, later only implausible jumps (> rate × (interval + 1 s)).
 - Stream modes (2000 frames each, probe, after removing the local clock skew and a 1.29 s timesync step): both delivered every frame; arrival delay above the best case median ~4 ms, p95 ~7 ms, max ~10 ms in both ClientPull and ServerPush. ServerPush is used because it never skips frames when the consumer is slow.
+
+## Live viewer (`vicon_receiver_tools.viewer`, viser)
+
+Browser viewer instead of RViz (the user wanted low CPU): `scripts/viz.sh` → the conda environment's `python -m vicon_receiver_tools.viewer`. It subscribes to `ViconFrame` **raw** (serialized; the callback only stores bytes) and decodes the latest message once per scene update (`update_rate_hz`, 30): subject axes (hidden when occluded), trails (sampled at the scene rate, redrawn at `trail_update_rate_hz`), markers coloured by camera count (green ≥ `good_camera_count`, yellow fewer, red occluded), the G1 URDF (`ViserUrdf` under `/robot`) placed at `T_vicon_body · mount · T_mount_root`, camera frustums (FOV from the intrinsics in `config/viewer.yaml`, read from the robot's `camera_info`), telemetry panel, and mount sliders + "Save mount". Measured steady state: viewer ~14 %, node ~5 % of one core.
+
+- Config: `config/viewer.yaml` (every entry required, `viewer_config.py`). Mount: `config/g1_mount.yaml` = pose of `torso_link` in the Vicon body frame; **estimated** by `mount_estimate.py` (marker constellation from a probe recording fitted to the meshes rigidly attached to `torso_link`, 1 cm surface offset, the 2 highest markers forced onto `head_link` per the user; 12 yaw starts; ~2.5 min) — RMS 5.9 mm but surface fits are ambiguous: verify visually and adjust with the sliders. A proper body→camera calibration is a separate, later task.
+- Conda environment `vicon_receiver` (`environment.yml`; no local venv, user decision): Python 3.12 + NumPy 1.26 to match the compiled modules of the system ROS 2, viser 1.1.1, yourdfpy 0.0.60, trimesh 5.2.0, pytest, clang-format, shellcheck. Created or updated by `build.sh` if conda is installed. Scripts find its interpreter with `conda env list` (`tools_env_python` in `common.sh`), so it needs no activation; ROS 2 comes through the `PYTHONPATH` of its `setup.bash`. `tests/run_tests.sh` runs pytest with it. yourdfpy calls the mesh resolver with the keyword `fname`; the G1 URDF uses `package://legged_nav_system/...` paths resolved by tail matching.
+- On WSL, a web server bound to 127.0.0.1 is reachable from Linux and from the Windows browser (`localhost`); only *closed* local ports hang.
 
 ## Vendored dependencies
 

@@ -112,8 +112,16 @@ run_cpp_tests()
 # Run the Python tests. Returns non-zero if any test failed.
 run_python_tests()
 {
-    info "Running Python tests (pytest)"
-    python3 -m pytest "${TESTS_DIR}" "${pytest_args[@]}"
+    # The conda environment has pytest, the viewer packages and the code checks; without it the
+    # system Python runs the tests that do not need them
+    local python="python3"
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -n "${prefix}" && -x "${prefix}/bin/python" ]]; then
+        python="${prefix}/bin/python"
+    fi
+    info "Running Python tests (pytest, ${python})"
+    "${python}" -m pytest "${TESTS_DIR}" "${pytest_args[@]}"
 }
 
 main()

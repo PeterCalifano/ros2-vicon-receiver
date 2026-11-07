@@ -9,7 +9,8 @@
 #   1. check the OS (ROS 2 Jazzy binaries target Ubuntu 24.04 "noble");
 #   2. install ROS 2 Jazzy from the official apt repository if missing (sudo);
 #   3. initialise/update rosdep and install the package dependencies (package.xml);
-#   4. build the packages with colcon.
+#   4. build the packages with colcon;
+#   5. create the conda environment of the Python tools (environment.yml), if conda is installed.
 #
 # Usage:
 #   scripts/build.sh [--clean] [--debug]
@@ -234,6 +235,30 @@ check_package_dirs()
     done
 }
 
+# Create the conda environment of the Python tools, or update it when environment.yml changed.
+# Optional: the node does not need it, so without conda this only warns.
+setup_tools_env()
+{
+    local conda_bin=""
+    conda_bin="$(conda_command)"
+    if [[ -z "${conda_bin}" ]]; then
+        warn "conda not found: the viewer, the mount estimate and the HDF5 export need the" \
+            "environment of ${TOOLS_ENVIRONMENT_FILE##*/}. Install conda, then run this script again."
+        return 0
+    fi
+
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -z "${prefix}" ]]; then
+        info "Creating the conda environment '$(tools_env_name)' (${TOOLS_ENVIRONMENT_FILE##*/})"
+        "${conda_bin}" env create --yes --file "${TOOLS_ENVIRONMENT_FILE}"
+    elif [[ "${TOOLS_ENVIRONMENT_FILE}" -nt "${prefix}/conda-meta/history" ]]; then
+        info "Updating the conda environment '$(tools_env_name)' (${TOOLS_ENVIRONMENT_FILE##*/} changed)"
+        "${conda_bin}" env update --file "${TOOLS_ENVIRONMENT_FILE}" --prune
+        touch "${prefix}/conda-meta/history"
+    fi
+}
+
 clean_workspace()
 {
     info "Removing build/, install/ and log/"
@@ -273,9 +298,10 @@ main()
 
     require_colcon
     build_workspace
+    setup_tools_env
 
     info "Build complete."
-    info "Next: scripts/launch.sh [-c config/vicon_client.yaml]"
+    info "Next: scripts/launch.sh [-c config/vicon_client.yaml]; viewer: scripts/viz.sh"
 }
 
 main "$@"

@@ -51,6 +51,8 @@ tests/
     test_static_checks.py              shellcheck and clang-format (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
+    test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs
+    test_tools_mount.py                robot model access and mount fit (synthetic robot; needs the conda environment)
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
     test_messages.py            vicon_receiver_msgs field names and types (interface pin)
@@ -85,7 +87,8 @@ VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live
 
 ## Developer tools
 
-The static checks use `shellcheck` and `clang-format` from `PATH`, or from the optional virtual
-environment `build/.devtools` (`python3 -m venv build/.devtools && build/.devtools/bin/pip install
-clang-format==18.1.8 shellcheck-py`). Don't put that environment's `bin/` on `PATH`: its
-`python3` has no colcon.
+`tests/run_tests.sh` runs pytest in the conda environment of `environment.yml`
+(`conda env create -f environment.yml`), which also pins `shellcheck` and `clang-format` for the
+static checks. Without it, the system Python runs the tests that do not need the environment, with
+the tools found on `PATH`. Don't build with the environment activated: colcon needs the system
+Python of ROS 2.

@@ -14,6 +14,7 @@ from vicon_receiver_tools.config import (
     Load_node_parameters,
     Main,
     Read_parameter,
+    Read_value,
 )
 
 
@@ -138,3 +139,30 @@ def test_main_reports_error(
     assert exit_code_ == 1
     assert captured_.out == ""
     assert "vicon_client.ros__parameters.namespace not found" in captured_.err
+
+
+# -------------------------------------------------------------------------------------------------
+# Dotted key paths of any YAML file
+# -------------------------------------------------------------------------------------------------
+def test_read_value_follows_a_dotted_path(tmp_path: Path) -> None:
+    """Nested keys of a file that is not a ROS parameters file."""
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text("robot:\n  directory: models/g1\n  urdf: model.urdf\n", encoding="utf-8")
+    assert Read_value(config_, "robot.directory") == "models/g1"
+    assert Read_value(config_, "robot") == {"directory": "models/g1", "urdf": "model.urdf"}
+
+
+def test_read_value_names_the_missing_key(tmp_path: Path) -> None:
+    """The error names the part of the path that does not exist."""
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text("robot:\n  directory: models/g1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"robot\.source not found"):
+        Read_value(config_, "robot.source")
+
+
+def test_main_key_path_mode(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    """--key-path reads a dotted path instead of a node parameter."""
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text("viewer:\n  port: 8080\n", encoding="utf-8")
+    assert Main([str(config_), "viewer.port", "--key-path"]) == 0
+    assert capsys.readouterr().out == "8080\n"

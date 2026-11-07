@@ -1,31 +1,29 @@
 """Static checks of the repository sources: shell scripts (shellcheck) and C++ formatting.
 
-Each check is skipped when its tool is not installed. The tools are looked up on PATH and in the
-optional developer virtual environment build/.devtools (pip: clang-format, shellcheck-py).
+Each check is skipped when its tool is not installed. The tools are looked up in the Python
+environment running the tests (the conda environment of environment.yml pins them), then on PATH.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from conftest import REPO_ROOT, SCRIPTS_DIR, ShellRunner
 
-DEVTOOLS_BIN_DIR: Path = REPO_ROOT / "build" / ".devtools" / "bin"
+ENVIRONMENT_BIN_DIR: Path = Path(sys.prefix) / "bin"
 
 
 def Find_tool(name: str) -> str | None:
     """Return the path of a developer tool, or None if it is not installed."""
-    found_ = shutil.which(name)
-    if found_ is not None:
-        return found_
-    candidate_ = DEVTOOLS_BIN_DIR / name
+    candidate_ = ENVIRONMENT_BIN_DIR / name
     if candidate_.is_file():
         return str(candidate_)
-    return None
+    return shutil.which(name)
 
 
 def Shell_sources() -> list[Path]:

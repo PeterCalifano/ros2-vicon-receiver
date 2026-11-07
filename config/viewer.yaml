@@ -1,0 +1,84 @@
+# =============================================================================
+# viewer.yaml - Live viewer (scripts/viz.sh) and the G1 model it shows.
+#
+# The viewer subscribes to the ViconFrame topic of the vicon_client node and
+# shows it in a browser (viser): subject axes, trail, markers coloured by the
+# number of cameras that saw them, occlusion, the G1 Unitree model attached to
+# its Vicon subject, and the camera frustums. Rendering runs in the browser.
+#
+# Every entry is required. Paths are relative to the repository root.
+# =============================================================================
+viewer:
+  # Web server of the viewer: open http://<host>:<port> in a browser.
+  host: "127.0.0.1"
+  port: 8080
+
+  # ViconFrame topic of the node ("<namespace>/frame").
+  topic: "/vicon/frame"
+
+  # Scene updates per second sent to the browser (frames arrive at 100 Hz).
+  update_rate_hz: 30.0
+
+  # Number of past positions drawn as a trail behind each subject (sampled at
+  # update_rate_hz: 300 = 10 s at 30 Hz), and how often the trail is redrawn
+  # (it is the largest object sent to the browser).
+  trail_length: 300
+  trail_update_rate_hz: 5.0
+
+  # Radius of the marker spheres [m] (real Vicon markers: ~7 mm).
+  marker_radius_m: 0.007
+
+  # Marker colours by number of cameras that saw the marker in the frame:
+  # >= good_camera_count: green, >= 1: yellow, occluded: red.
+  good_camera_count: 4
+
+robot:
+  # Vicon subject the G1 is attached to.
+  subject: "g1-unitree-torso-cam"
+
+  # Where scripts/fetch_g1_model.sh copies the model from (rsync over ssh) and to.
+  # The source is the legged-nav-system G1 profile (URDF + OBJ meshes, ~37 MB).
+  source: "pcalifano-u:devDir/projects-DFKI/legged-nav-system/profiles/g1/"
+  directory: "models/g1"
+  urdf: "model.urdf"
+
+  # G1 link whose pose in the Vicon body frame is given by the mount file.
+  mount_link: "torso_link"
+
+  # Pose of mount_link in the Vicon body frame (written by
+  # scripts/estimate_mount.sh and by the "save mount" button of the viewer).
+  mount_file: "config/g1_mount.yaml"
+
+# Cameras drawn as frustums, at their optical frames of the G1 URDF (OpenCV
+# convention: z forward, y down). Intrinsics from /camera/camera/*/camera_info of
+# the robot recording dataset-g1-exp2ms-g128-20261019 (RealSense, no distortion).
+cameras:
+  - name: "color"
+    frame: "torso_camera_color_optical_frame"
+    width: 1280
+    height: 720
+    fx: 912.4861
+    fy: 912.3522
+    cx: 645.2643
+    cy: 378.1513
+  - name: "infra1"
+    frame: "torso_camera_infra1_optical_frame"
+    width: 848
+    height: 480
+    fx: 429.4087
+    fy: 429.4087
+    cx: 426.1302
+    cy: 239.5502
+
+# Length of the frustums drawn in the scene [m].
+frustum_scale_m: 0.15
+
+# Rough estimate of the mount (scripts/estimate_mount.sh): markers fitted to the
+# meshes of mount_link and the links fixed to it.
+mount_estimate:
+  # Distance of a marker centre from the mesh surface [m] (7 mm marker + base).
+  surface_offset_m: 0.010
+  # The highest markers (along the body z axis) lie on this link: the two top
+  # markers were mounted on the head, roughly on its lateral sides.
+  top_markers_link: "head_link"
+  top_markers_count: 2

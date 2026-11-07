@@ -92,6 +92,39 @@ def Read_parameter(
     return parameters_[param_name]
 
 
+def Load_yaml(config_file: Path) -> Any:
+    """Load a YAML file.
+
+    Raises:
+        ConfigError: If the file cannot be read or parsed.
+    """
+    try:
+        with config_file.open("r", encoding="utf-8") as stream_:
+            return yaml.safe_load(stream_)
+    except OSError as error_:
+        raise ConfigError(f"cannot read {config_file}: {error_.strerror}") from error_
+    except yaml.YAMLError as error_:
+        raise ConfigError(f"cannot parse {config_file}: {error_}") from error_
+
+
+def Read_value(config_file: Path, key_path: str) -> Any:
+    """Return the value at a dotted key path of any YAML file, e.g. ``robot.directory``.
+
+    Used for the configuration files that are not ROS 2 parameters files (config/viewer.yaml).
+
+    Raises:
+        ConfigError: If the file is invalid or a key of the path is missing.
+    """
+    value_: Any = Load_yaml(config_file)
+    walked_: list[str] = []
+    for key_ in key_path.split("."):
+        walked_.append(key_)
+        if not isinstance(value_, dict) or key_ not in value_:
+            raise ConfigError(f"{'.'.join(walked_)} not found in {config_file}")
+        value_ = value_[key_]
+    return value_
+
+
 def Format_value(value: Any) -> str:
     """Format a parameter value as text for shell scripts.
 
@@ -116,7 +149,15 @@ def Main(argv: list[str] | None = None) -> int:
         description="Print the value of one parameter from a ROS 2 parameters file.",
     )
     parser_.add_argument("config_file", type=Path, help="YAML parameters file")
-    parser_.add_argument("param_name", help="parameter name under <node>.ros__parameters")
+    parser_.add_argument(
+        "param_name",
+        help="parameter name under <node>.ros__parameters (or a dotted key path with --key-path)",
+    )
+    parser_.add_argument(
+        "--key-path",
+        action="store_true",
+        help="read param_name as a dotted key path of any YAML file (e.g. robot.directory)",
+    )
     parser_.add_argument(
         "--node",
         default=DEFAULT_NODE_NAME,
@@ -125,7 +166,10 @@ def Main(argv: list[str] | None = None) -> int:
     arguments_ = parser_.parse_args(argv)
 
     try:
-        value_ = Read_parameter(arguments_.config_file, arguments_.param_name, arguments_.node)
+        if arguments_.key_path:
+            value_ = Read_value(arguments_.config_file, arguments_.param_name)
+        else:
+            value_ = Read_parameter(arguments_.config_file, arguments_.param_name, arguments_.node)
     except ConfigError as error_:
         print(error_, file=sys.stderr)
         return 1

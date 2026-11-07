@@ -11,8 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import yaml
 
-from conftest import Load_default_parameters, ShellRunner, TcpListener
+from conftest import REPO_ROOT, Load_default_parameters, ShellRunner, TcpListener
 
 # Canned output of "ip -o -4 addr show" for a machine on the Vicon network (eth9) and an
 # office network (eth4)
@@ -313,3 +314,60 @@ def test_check_vicon_reachable_uses_configured_timeout(shell: ShellRunner) -> No
     )
     assert "(timeout 7 s)" in result_.stdout
     assert "no answer within 7 s" in result_.stderr
+
+
+# -------------------------------------------------------------------------------------------------
+# Conda environment of the Python tools
+# -------------------------------------------------------------------------------------------------
+def Fake_conda_env(environment_list: str) -> dict[str, str]:
+    """Environment variables selecting the fake 'conda' command and its environments."""
+    return {"CONDA_EXE": "", "FAKE_CONDA_ENV_LIST": environment_list}
+
+
+def Conda_listing(name: str, prefix: Path, active: bool = False) -> str:
+    """Output of "conda env list" with one more environment than base."""
+    marker_ = "*" if active else " "
+    return f"# conda environments:\n#\nbase       /opt/conda\n{name}  {marker_}  {prefix}\n"
+
+
+def Tools_env_name(shell: ShellRunner) -> str:
+    """Name of the tools environment, from environment.yml."""
+    result_ = shell.run_common("tools_env_name")
+    assert result_.returncode == 0, result_.stderr
+    return result_.stdout.strip()
+
+
+def test_tools_env_name_comes_from_the_environment_file(shell: ShellRunner) -> None:
+    """The name is read from environment.yml, not repeated in the scripts."""
+    document_ = yaml.safe_load((REPO_ROOT / "environment.yml").read_text(encoding="utf-8"))
+    assert Tools_env_name(shell) == document_["name"]
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_tools_env_python_finds_the_environment(shell: ShellRunner, tmp_path: Path, active: bool) -> None:
+    """The interpreter is found with or without the environment activated ('*' in the listing)."""
+    python_ = tmp_path / "bin" / "python"
+    python_.parent.mkdir()
+    python_.touch(mode=0o755)
+    environment_ = Fake_conda_env(Conda_listing(Tools_env_name(shell), tmp_path, active))
+
+    result_ = shell.run_common("tools_env_python", extra_env=environment_, use_fake_bin=True)
+
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == str(python_)
+
+
+def test_tools_env_python_reports_a_missing_environment(shell: ShellRunner, tmp_path: Path) -> None:
+    """Another environment in the listing is not ours: the error says how to create it."""
+    environment_ = Fake_conda_env(Conda_listing("another_environment", tmp_path))
+    result_ = shell.run_common("tools_env_python", extra_env=environment_, use_fake_bin=True)
+    assert result_.returncode == 1
+    assert "conda env create -f" in result_.stderr
+
+
+def test_tools_env_prefix_is_empty_without_conda(shell: ShellRunner) -> None:
+    """Without conda there is no environment, and no failure."""
+    environment_ = {"CONDA_EXE": "", "PATH": "/usr/bin:/bin"}
+    result_ = shell.run_common('echo "[$(tools_env_prefix)]"', extra_env=environment_)
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == "[]"

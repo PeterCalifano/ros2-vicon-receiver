@@ -11,13 +11,15 @@
 #   scripts/format.sh --check    # only report files that are not formatted
 #
 # Environment:
-#   CLANG_FORMAT   clang-format executable to use (default: clang-format)
+#   CLANG_FORMAT   clang-format executable to use (default: the pinned one of the conda
+#                  environment of environment.yml, else clang-format on PATH)
 # =============================================================================
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 # Directories (relative to the repository root) that contain our own C++ code
 readonly SOURCE_DIRS=(
@@ -43,11 +45,20 @@ The clang-format executable can be overridden with the CLANG_FORMAT variable.
 EOF
 }
 
-# Print an error message to stderr and terminate.
-die()
+# Print the clang-format to use: CLANG_FORMAT, the conda environment's, or the one on PATH.
+find_clang_format()
 {
-    echo "[format.sh] ERROR: $*" >&2
-    exit 1
+    if [[ -n "${CLANG_FORMAT:-}" ]]; then
+        echo "${CLANG_FORMAT}"
+        return 0
+    fi
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -n "${prefix}" && -x "${prefix}/bin/clang-format" ]]; then
+        echo "${prefix}/bin/clang-format"
+    else
+        echo "clang-format"
+    fi
 }
 
 parse_args()
@@ -90,9 +101,11 @@ main()
 {
     parse_args "$@"
 
-    local clang_format="${CLANG_FORMAT:-clang-format}"
+    local clang_format=""
+    clang_format="$(find_clang_format)"
     if ! command -v "${clang_format}" >/dev/null 2>&1; then
-        die "'${clang_format}' not found. Install it with: sudo apt install clang-format"
+        die "'${clang_format}' not found. Create the conda environment" \
+            "(conda env create -f environment.yml) or install it with: sudo apt install clang-format"
     fi
 
     collect_files

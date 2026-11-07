@@ -1,0 +1,14 @@
+# Pose of the G1 link 'torso_link' in the Vicon body frame of subject 'g1-unitree-torso-cam'.
+# ESTIMATED by vicon_receiver_tools.mount_estimate (markers fitted to the G1 meshes),
+# not measured: RMS fit error 5.9 mm, recording build/diag/compare_ServerPush.json.
+# Adjust it in the viewer (scripts/viz.sh) and save from there if needed.
+link: torso_link
+subject: g1-unitree-torso-cam
+xyz_m:
+- -0.02939
+- -0.0266
+- -0.23081
+rpy_rad:
+- 0.06198
+- 0.24192
+- 0.9971
