@@ -1,6 +1,6 @@
 """Integration test: two ROS 2 processes on this machine exchange messages.
 
-This failed on WSL with mirrored networking until scripts/lib/dds.sh selected
+This failed on WSL with mirrored networking until scripts/lib/ros_env.sh selected
 config/fastdds_wsl.xml (localhost traffic was routed to Windows). The ros_env fixture applies the
 same DDS configuration as the scripts, so this test guards the fix (and passes trivially on
 machines without the problem).

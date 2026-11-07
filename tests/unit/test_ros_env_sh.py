@@ -1,4 +1,5 @@
-"""Unit tests of scripts/lib/dds.sh (DDS configuration for WSL mirrored networking).
+"""Unit tests of scripts/lib/ros_env.sh (ROS setup files, DDS configuration for WSL mirrored
+networking) and of scripts/source_ros_env.sh.
 
 The fake 'ip' command in tests/fixtures/fake_bin reproduces the routes of a normal Linux machine
 and of WSL with mirrored networking, so the detection runs the same on every machine.
@@ -7,10 +8,12 @@ and of WSL with mirrored networking, so the detection runs the same on every mac
 from __future__ import annotations
 
 import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
-from conftest import DDS_SH, REPO_ROOT, ShellRunner
+from conftest import REPO_ROOT, ROS_ENV_SH, ShellRunner
 
 # "ip -4 route get 127.0.0.1" on a normal Linux machine
 ROUTE_LOCAL: str = "local 127.0.0.1 dev lo table local src 127.0.0.1 uid 1000"
@@ -41,7 +44,7 @@ def Run_dds(
     preset_profile: str | None = None,
     preset_variable: str = "FASTRTPS_DEFAULT_PROFILES_FILE",
 ):
-    """Run a snippet with dds.sh sourced and the fake network state; return the process."""
+    """Run a snippet with ros_env.sh sourced and the fake network state; return the process."""
     environment_ = {
         "FAKE_IP_ROUTE_OUTPUT": route,
         "FAKE_IP_LO_ADDR_OUTPUT": lo_addresses,
@@ -52,7 +55,7 @@ def Run_dds(
         environment_[preset_variable] = preset_profile
         variables_.remove(preset_variable)
     unset_ = f"unset {' '.join(variables_)}; "
-    script_ = f'{unset_}source "{DDS_SH}"; {snippet}'
+    script_ = f'{unset_}source "{ROS_ENV_SH}"; {snippet}'
     return shell.run_common(script_, extra_env=environment_, use_fake_bin=True)
 
 
@@ -170,18 +173,58 @@ def test_configure_warns_without_wsl_loopback_address(shell: ShellRunner) -> Non
 
 @pytest.mark.parametrize("address", ["10.255.255.254"])
 def test_profile_uses_the_wsl_loopback_address(address: str) -> None:
-    """config/fastdds_wsl.xml and dds.sh agree on the loopback address."""
+    """config/fastdds_wsl.xml and ros_env.sh agree on the loopback address."""
     profile_text_ = open(PROFILE_FILE, encoding="utf-8").read()
-    dds_text_ = DDS_SH.read_text(encoding="utf-8")
+    ros_env_text_ = ROS_ENV_SH.read_text(encoding="utf-8")
     assert profile_text_.count(f"<address>{address}</address>") == 2  # whitelist + initial peer
-    assert f'VICON_WSL_LOOPBACK_ADDRESS="{address}"' in dds_text_
+    assert f'VICON_WSL_LOOPBACK_ADDRESS="{address}"' in ros_env_text_
+
+
+# -------------------------------------------------------------------------------------------------
+# ROS setup files
+# -------------------------------------------------------------------------------------------------
+def Run_interactive_like(snippet: str) -> subprocess.CompletedProcess[str]:
+    """Run a snippet with ros_env.sh sourced, without the strict mode of the scripts."""
+    return subprocess.run(
+        ["bash", "-c", f'source "{ROS_ENV_SH}"; {snippet}'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def test_setup_files_follow_the_distribution() -> None:
+    """The ROS setup file is the one of VICON_ROS_DISTRO; the overlay is in the repository."""
+    result_ = Run_interactive_like(
+        'echo "${VICON_ROS_SETUP_FILE}"; echo "${VICON_WORKSPACE_SETUP_FILE}"; '
+        'echo "${VICON_ROS_DISTRO}"'
+    )
+    ros_setup_, workspace_setup_, distro_ = result_.stdout.split()
+    assert ros_setup_ == f"/opt/ros/{distro_}/setup.bash"
+    assert workspace_setup_ == str(REPO_ROOT / "install" / "setup.bash")
+
+
+@pytest.mark.parametrize("nounset", [True, False])
+def test_source_setup_file_restores_nounset(tmp_path: Path, nounset: bool) -> None:
+    """Setup files may read unset variables; 'nounset' is restored as it was afterwards."""
+    setup_file_ = tmp_path / "setup.bash"
+    setup_file_.write_text('SETUP_VALUE="${NOT_SET_ANYWHERE}sourced"\n', encoding="utf-8")
+    option_ = "set -u; " if nounset else ""
+    result_ = Run_interactive_like(
+        f'{option_}vicon_source_setup_file "{setup_file_}"; '
+        'echo "${SETUP_VALUE}"; [[ $- == *u* ]] && echo nounset || echo no-nounset'
+    )
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.split() == ["sourced", "nounset" if nounset else "no-nounset"]
 
 
 # -------------------------------------------------------------------------------------------------
 # source_ros_env.sh
 # -------------------------------------------------------------------------------------------------
 def test_ros_env_refuses_to_be_executed(shell: ShellRunner) -> None:
-    """source_ros_env.sh only makes sense when sourced into the user's shell."""
+    """source_ros_env.sh only makes sense when sourced into the user's shell: say how."""
     result_ = shell.run_script("source_ros_env.sh", [])
     assert result_.returncode == 1
     assert "must be sourced" in result_.stderr
+    assert "Usage: source " in result_.stderr

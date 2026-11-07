@@ -12,10 +12,9 @@
 #     bag_info.txt     ros2 bag info at the end of the session
 #
 # MCAP is the only output: conversion to CSV/HDF5 is a separate, optional step
-# (scripts/export.sh). Stop the recording with Ctrl+C.
+# (scripts/export.sh).
 #
-# Usage:
-#   scripts/record.sh [-c FILE] [-t TAG] [-o DIR]
+# Options: scripts/record.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -30,20 +29,32 @@ tag=""
 
 usage()
 {
-    cat <<USAGE
-Usage: $(basename "$0") [options]
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [-c FILE] [-t TAG] [-o DIR] [-h]
 
-Record the vicon_client topics (ViconFrame, PoseStamped, TF) of a running node
-to an MCAP bag, in a new session directory. Stop with Ctrl+C.
+Record the topics of a running ${VICON_NODE_NAME} node (ViconFrame, PoseStamped, TF)
+to an MCAP bag, in a new session directory <DIR>/<UTC time>[_TAG]/ with the bag,
+copies of the configuration, meta.yaml and the bag summary.
+
+Stop the recording with Ctrl+C, or with SIGTERM (kill -TERM <pid>) when another
+script started it in the background: there it ignores SIGINT.
 
 Options:
   -c, --config FILE  Node parameters file (default: config/vicon_client.yaml);
                      its namespace selects the topics, and it is copied
-  -t, --tag TAG      Name appended to the session directory (letters, digits, - _)
+  -t, --tag TAG      Suffix of the session directory (letters, digits, - _)
   -o, --output DIR   Where sessions are created (default: recordings/), e.g. an
                      external disk (/mnt/<drive>/... on WSL)
   -h, --help         Show this help and exit
-USAGE
+
+Exit status: 0 when the bag was closed cleanly, 1 otherwise (node not running,
+recorder error, or no closed bag).
+
+Examples:
+  scripts/record.sh
+  scripts/record.sh -t walk_slow
+  scripts/record.sh -t calibration -o /mnt/d/vicon_sessions
+EOF
 }
 
 parse_args()
@@ -51,13 +62,11 @@ parse_args()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -c | --config | -t | --tag | -o | --output)
-                if [[ $# -lt 2 ]]; then
-                    die "Option $1 requires a value."
-                fi
+                require_option_value "$1" "$#"
                 case "$1" in
                     -c | --config) config_file="$2" ;;
                     -t | --tag) tag="$2" ;;
-                    *) output_dir="$2" ;;
+                    -o | --output) output_dir="$2" ;;
                 esac
                 shift
                 ;;
@@ -66,8 +75,7 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
@@ -155,8 +163,7 @@ main()
     parse_args "$@"
     require_config_file "${config_file}"
     config_file="$(realpath "${config_file}")"
-    require_ros
-    require_install
+    require_workspace
     vicon_configure_dds
     require_node_running
 
@@ -181,7 +188,7 @@ main()
 
     # Configuration used for this session
     cp "${config_file}" "${session_dir}/config/vicon_client.yaml"
-    for extra_config in "${REPO_ROOT}/config/viewer.yaml" "${REPO_ROOT}/config/g1_mount.yaml"; do
+    for extra_config in "${DEFAULT_VIEWER_CONFIG_FILE}" "${REPO_ROOT}/config/g1_mount.yaml"; do
         if [[ -f "${extra_config}" ]]; then
             cp "${extra_config}" "${session_dir}/config/"
         fi

@@ -6,9 +6,7 @@
 # subjects, trails, markers coloured by camera count, occlusion, the G1 model
 # and its camera frustums, telemetry, and sliders to adjust the marker mount.
 #
-# Usage:
-#   scripts/start_visualizer.sh [-c FILE]
-# Then open the printed address (default http://127.0.0.1:8080) in a browser.
+# Options: scripts/start_visualizer.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -17,19 +15,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-viewer_config="${REPO_ROOT}/config/viewer.yaml"
+viewer_config="${DEFAULT_VIEWER_CONFIG_FILE}"
 
 usage()
 {
-    cat <<USAGE
-Usage: $(basename "$0") [options]
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [-c FILE] [-h]
 
-Start the live viewer of the ViconFrame topic (run scripts/launch.sh first).
+Start the live viewer of the ViconFrame topic of a running ${VICON_NODE_NAME} node
+(scripts/launch.sh first), then open the printed address in a browser (default
+http://127.0.0.1:8080, set by viewer.host and viewer.port in the viewer config).
+Runs in the conda environment of environment.yml (scripts/build.sh creates it);
+the G1 model comes from scripts/fetch_g1_model.sh.
 
 Options:
   -c, --config FILE  Viewer config (default: config/viewer.yaml)
   -h, --help         Show this help and exit
-USAGE
+
+Examples:
+  scripts/start_visualizer.sh
+  scripts/start_visualizer.sh -c config/viewer_lab_b.yaml
+EOF
 }
 
 parse_args()
@@ -37,9 +43,7 @@ parse_args()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -c | --config)
-                if [[ $# -lt 2 ]]; then
-                    die "Option $1 requires a file argument."
-                fi
+                require_option_value "$1" "$#"
                 viewer_config="$2"
                 shift
                 ;;
@@ -48,8 +52,7 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
@@ -61,17 +64,12 @@ main()
     parse_args "$@"
     require_config_file "${viewer_config}"
     viewer_config="$(realpath "${viewer_config}")"
-    require_ros
-    require_install
-    local tools_python=""
-    tools_python="$(tools_env_python)"
-    # The viewer is a separate ROS 2 process: it must see the node (WSL: see dds.sh)
+    require_workspace
+    # The viewer is a separate ROS 2 process: it must see the node (WSL: see ros_env.sh)
     vicon_configure_dds
 
     cd "${REPO_ROOT}"
-    PYTHONPATH="${TOOLS_PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
-        exec "${tools_python}" -m vicon_receiver_tools.viewer \
-        --config "${viewer_config}" --repo-root "${REPO_ROOT}"
+    exec_tools_env_module viewer --config "${viewer_config}" --repo-root "${REPO_ROOT}"
 }
 
 main "$@"

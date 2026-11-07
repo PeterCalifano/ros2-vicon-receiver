@@ -152,6 +152,61 @@ def test_read_config_param_wrong_node_name(shell: ShellRunner, tmp_path: Path) -
     assert "not found" in result_.stderr
 
 
+def test_read_config_key_path_reads_nested_values(shell: ShellRunner, tmp_path: Path) -> None:
+    """Values of other config files (viewer.yaml) are read by their dotted key path."""
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text("robot:\n  source: 'host:/models/g1'\n", encoding="utf-8")
+    result_ = shell.run_common(f'read_config_key_path "{config_}" robot.source')
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == "host:/models/g1"
+
+
+def test_read_config_key_path_missing_key(shell: ShellRunner, tmp_path: Path) -> None:
+    """A missing key stops with the error of the config module."""
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text("robot:\n  source: 'host:/models/g1'\n", encoding="utf-8")
+    result_ = shell.run_common(
+        f'value=""; value="$(read_config_key_path "{config_}" robot.urdf)"'
+    )
+    assert result_.returncode == 1
+    assert "Invalid config file:" in result_.stderr
+
+
+# -------------------------------------------------------------------------------------------------
+# Command lines and workspace
+# -------------------------------------------------------------------------------------------------
+def test_require_option_value_accepts_a_value(shell: ShellRunner) -> None:
+    """An option followed by its value passes."""
+    result_ = shell.run_common('set -- --config file.yaml; require_option_value "$1" "$#"; echo ok')
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == "ok"
+
+
+def test_require_option_value_rejects_a_missing_value(shell: ShellRunner) -> None:
+    """An option given last, without its value, stops with an error naming it."""
+    result_ = shell.run_common('set -- --config; require_option_value "$1" "$#"; echo ok')
+    assert result_.returncode == 1
+    assert "Option --config requires a value." in result_.stderr
+    assert "ok" not in result_.stdout
+
+
+def test_die_with_usage_prints_the_usage_of_the_caller(shell: ShellRunner) -> None:
+    """The usage of the calling script goes to stderr, followed by the error."""
+    result_ = shell.run_common('usage() { echo "Usage: demo.sh [-h]"; }; die_with_usage "Bad call"')
+    assert result_.returncode == 1
+    assert result_.stdout == ""
+    assert result_.stderr.index("Usage: demo.sh") < result_.stderr.index("ERROR: Bad call")
+
+
+def test_package_dirs_are_the_colcon_packages(shell: ShellRunner) -> None:
+    """PACKAGE_DIRS lists every package of the repository, which build.sh and run_tests.sh build."""
+    result_ = shell.run_common('printf "%s\\n" "${PACKAGE_DIRS[@]}"')
+    assert result_.returncode == 0, result_.stderr
+    listed_ = result_.stdout.split()
+    found_ = sorted(path_.parent.name for path_ in REPO_ROOT.glob("*/package.xml"))
+    assert sorted(listed_) == found_
+
+
 # -------------------------------------------------------------------------------------------------
 # resolve_ipv4
 # -------------------------------------------------------------------------------------------------
@@ -363,6 +418,33 @@ def test_tools_env_python_reports_a_missing_environment(shell: ShellRunner, tmp_
     result_ = shell.run_common("tools_env_python", extra_env=environment_, use_fake_bin=True)
     assert result_.returncode == 1
     assert "conda env create -f" in result_.stderr
+
+
+@pytest.mark.parametrize("program", ["python", "clang-format"])
+def test_tools_env_bin_finds_programs_of_the_environment(
+    shell: ShellRunner, tmp_path: Path, program: str
+) -> None:
+    """Programs of the environment (its Python, the pinned clang-format) are found by name."""
+    program_ = tmp_path / "bin" / program
+    program_.parent.mkdir()
+    program_.touch(mode=0o755)
+    environment_ = Fake_conda_env(Conda_listing(Tools_env_name(shell), tmp_path))
+
+    result_ = shell.run_common(f"tools_env_bin {program}", extra_env=environment_, use_fake_bin=True)
+
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == str(program_)
+
+
+def test_tools_env_bin_is_empty_for_a_missing_program(shell: ShellRunner, tmp_path: Path) -> None:
+    """A program the environment does not have prints nothing (callers fall back), no failure."""
+    (tmp_path / "bin").mkdir()
+    environment_ = Fake_conda_env(Conda_listing(Tools_env_name(shell), tmp_path))
+    result_ = shell.run_common(
+        'echo "[$(tools_env_bin clang-format)]"', extra_env=environment_, use_fake_bin=True
+    )
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == "[]"
 
 
 def test_tools_env_prefix_is_empty_without_conda(shell: ShellRunner) -> None:

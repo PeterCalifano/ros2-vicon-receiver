@@ -12,8 +12,7 @@
 #   4. build the packages with colcon;
 #   5. create the conda environment of the Python tools (environment.yml), if conda is installed.
 #
-# Usage:
-#   scripts/build.sh [--clean] [--debug]
+# Options: scripts/build.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -21,14 +20,6 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
-
-# Packages of this repository, relative to the repository root. Their system
-# dependencies (package.xml) are installed by rosdep.
-readonly PACKAGE_DIRS=(
-    "vicon_receiver_msgs"
-    "vicon_receiver"
-    "vicon_receiver_tools"
-)
 
 readonly ROSDEP_SOURCES_FILE="/etc/ros/rosdep/sources.list.d/20-default.list"
 readonly ROS_APT_SOURCE_REPO="ros-infrastructure/ros-apt-source"
@@ -39,10 +30,13 @@ build_type="Release"
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [options]
+Usage: ${SCRIPT_NAME} [--clean] [--debug] [-h]
 
-Install ROS 2 ${ROS_DISTRO_NAME} (if missing) and the package dependencies, then
-build this repository's packages with colcon. Steps that need root use sudo.
+Install ROS 2 ${VICON_ROS_DISTRO} (if missing) and the package dependencies (rosdep),
+build the packages of this repository with colcon (build/, install/ and log/ at
+the repository root; the C++ tests are not compiled), then create or update the
+conda environment of the Python tools (environment.yml) if conda is installed.
+Steps that need root use sudo.
 
 Options:
   --clean     Remove build/, install/ and log/ before building
@@ -50,7 +44,13 @@ Options:
   -h, --help  Show this help and exit
 
 Environment:
-  ROS_APT_SOURCE_VERSION  Pin the ros2-apt-source release (default: latest)
+  ROS_APT_SOURCE_VERSION  ros2-apt-source release installed with ROS 2
+                          (default: the latest release on github.com)
+
+Examples:
+  scripts/build.sh
+  scripts/build.sh --clean --debug
+  ROS_APT_SOURCE_VERSION=1.3.0 scripts/build.sh
 EOF
 }
 
@@ -69,8 +69,7 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
@@ -90,7 +89,7 @@ check_os()
     fi
     if [[ "${codename}" != "noble" ]]; then
         die "Unsupported OS (codename '${codename:-unknown}')." \
-            "ROS 2 ${ROS_DISTRO_NAME} binaries require Ubuntu 24.04 (noble)." \
+            "ROS 2 ${VICON_ROS_DISTRO} binaries require Ubuntu 24.04 (noble)." \
             "On other systems use the VS Code Dev Container (.devcontainer/)."
     fi
 }
@@ -191,14 +190,14 @@ add_ros_apt_repository()
 # Install ROS 2 (base variant + development tools) if it is not installed.
 install_ros_if_missing()
 {
-    if [[ -f "${ROS_SETUP_FILE}" ]]; then
-        info "ROS 2 ${ROS_DISTRO_NAME} found in /opt/ros/${ROS_DISTRO_NAME}."
+    if [[ -f "${VICON_ROS_SETUP_FILE}" ]]; then
+        info "ROS 2 ${VICON_ROS_DISTRO} found (${VICON_ROS_SETUP_FILE})."
         return 0
     fi
 
-    info "ROS 2 ${ROS_DISTRO_NAME} not found: installing it from the official apt repository."
+    info "ROS 2 ${VICON_ROS_DISTRO} not found: installing it from the official apt repository."
     add_ros_apt_repository
-    ensure_apt_packages "ros-${ROS_DISTRO_NAME}-ros-base" "ros-dev-tools"
+    ensure_apt_packages "ros-${VICON_ROS_DISTRO}-ros-base" "ros-dev-tools"
 }
 
 # Initialise rosdep once, refresh its database and install the package dependencies.
@@ -210,12 +209,12 @@ install_rosdep_dependencies()
     fi
 
     info "Updating the rosdep database"
-    rosdep update --rosdistro "${ROS_DISTRO_NAME}"
+    rosdep update --rosdistro "${VICON_ROS_DISTRO}"
 
     info "Installing package dependencies with rosdep"
     rosdep install \
         --from-paths "${PACKAGE_DIRS[@]}" \
-        --rosdistro "${ROS_DISTRO_NAME}" \
+        --rosdistro "${VICON_ROS_DISTRO}" \
         --ignore-src \
         -y
 }
@@ -224,7 +223,8 @@ install_rosdep_dependencies()
 # Build
 # -----------------------------------------------------------------------------
 
-# Make sure every package of PACKAGE_DIRS is present (e.g. not lost in a partial checkout).
+# Make sure every package of PACKAGE_DIRS (common.sh) is present (e.g. not lost in a partial
+# checkout).
 check_package_dirs()
 {
     local package_dir=""
@@ -265,24 +265,11 @@ clean_workspace()
     rm -rf "${REPO_ROOT}/build" "${REPO_ROOT}/install" "${REPO_ROOT}/log"
 }
 
-build_workspace()
-{
-    # Tests are not compiled here: tests/run_tests.sh rebuilds with BUILD_TESTING=ON
-    info "Building ${PACKAGE_DIRS[*]} (${build_type})"
-    python3 -m colcon build \
-        --base-paths "${PACKAGE_DIRS[@]}" \
-        --symlink-install \
-        --cmake-args \
-        "-DCMAKE_BUILD_TYPE=${build_type}" \
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" \
-        "-DBUILD_TESTING=OFF"
-}
-
 main()
 {
     parse_args "$@"
 
-    # colcon and rosdep work on paths relative to the workspace root
+    # rosdep works on paths relative to the workspace root
     cd "${REPO_ROOT}"
 
     check_os
@@ -297,7 +284,8 @@ main()
     fi
 
     require_colcon
-    build_workspace
+    # The C++ tests are not compiled here: tests/run_tests.sh builds with BUILD_TESTING=ON
+    colcon_build_workspace "${build_type}" OFF
     setup_tools_env
 
     info "Build complete."

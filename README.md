@@ -220,7 +220,7 @@ Follow these host steps if you prefer a native (non‑container) setup. Assumes 
 
 ### Option C — Repository scripts (Ubuntu 24.04, also WSL)
 
-The repository root is the colcon workspace; every script prints `-h`.
+The repository root is the colcon workspace; every script documents its options, environment variables and examples with `--help`.
 
 ```bash
 scripts/build.sh                 # installs ROS 2 Jazzy + dependencies if missing (sudo), builds, creates the conda environment

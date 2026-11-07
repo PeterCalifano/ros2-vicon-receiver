@@ -1,28 +1,58 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dds.sh - Choose the DDS transport configuration for this machine.
+# ros_env.sh - ROS 2 environment of this repository: ROS distribution, setup
+# files, and the DDS configuration of this machine.
 #
 # On WSL with mirrored networking, every TCP/UDP packet for 127.0.0.1 is routed
 # to Windows, so ROS 2 processes on this machine cannot discover each other.
 # vicon_configure_dds detects this and selects config/fastdds_wsl.xml, which
 # keeps DDS traffic inside Linux.
 #
-# Sourced by scripts/lib/common.sh and scripts/source_ros_env.sh. It only defines
-# functions (prefixed with vicon_) and does not change shell options, so it is
-# safe to source in an interactive shell.
+# Sourced by scripts/lib/common.sh (scripts, which stop on errors) and by
+# scripts/source_ros_env.sh (interactive shells). It only defines variables and
+# functions prefixed with VICON_/vicon_, leaves the shell options as they were
+# and never exits, so it is safe to source in an interactive shell.
 # =============================================================================
+
+# The variables are used by the files that source this one.
+# shellcheck disable=SC2034
+
+# Repository root (resolved from this file, so it works from any directory)
+VICON_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# ROS 2 distribution of the workspace, and the setup files of ROS 2 and of the workspace overlay
+VICON_ROS_DISTRO="jazzy"
+VICON_ROS_SETUP_FILE="/opt/ros/${VICON_ROS_DISTRO}/setup.bash"
+VICON_WORKSPACE_SETUP_FILE="${VICON_REPO_ROOT}/install/setup.bash"
 
 # Address of the Linux loopback device that WSL does not redirect; it must match
 # the address in config/fastdds_wsl.xml.
 VICON_WSL_LOOPBACK_ADDRESS="10.255.255.254"
 
+# Source a ROS setup file. ROS setup scripts reference unset variables, so 'nounset' is
+# disabled while sourcing them and restored afterwards if it was set.
+#   $1  setup file
+vicon_source_setup_file()
+{
+    local setup_file="$1"
+    local nounset_was_set=false
+    if [[ $- == *u* ]]; then
+        nounset_was_set=true
+    fi
+    set +u
+    # shellcheck disable=SC1090  # path is only known at runtime
+    source "${setup_file}"
+    local status=$?
+    if [[ "${nounset_was_set}" == true ]]; then
+        set -u
+    fi
+    return "${status}"
+}
+
 # Print the path of the repository Fast DDS profile for WSL.
 vicon_dds_profile_file()
 {
-    # BASH_SOURCE[0] is this file, also when called from another script
-    local lib_dir
-    lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    printf '%s\n' "$(cd "${lib_dir}/../.." && pwd)/config/fastdds_wsl.xml"
+    printf '%s\n' "${VICON_REPO_ROOT}/config/fastdds_wsl.xml"
 }
 
 # Return 0 if traffic to 127.0.0.1 does not stay on the Linux loopback device.

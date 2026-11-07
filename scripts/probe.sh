@@ -7,16 +7,11 @@
 # markers, quality, occlusion, latency, cameras) and writes them as JSON.
 #
 # Steps:
-#   1. take the server address from the parameters file (or --host);
+#   1. take the server address and stream mode from the parameters file (or the options);
 #   2. check that the DataStream server is reachable (same check as launch.sh);
 #   3. run vicon_probe and write the recording to probe_output/ (or -o FILE).
 #
-# Usage:
-#   scripts/probe.sh [-c FILE | --host HOST[:PORT]] [-n FRAMES] [-o FILE] [options]
-#
-# Examples:
-#   scripts/probe.sh
-#   scripts/probe.sh --host 10.250.223.40 -n 500 -o session.json
+# Options: scripts/probe.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -32,8 +27,8 @@ readonly PROBE_OUTPUT_DIR="${REPO_ROOT}/probe_output"
 readonly DEFAULT_FRAME_COUNT=100
 
 config_file="${DEFAULT_CONFIG_FILE}"
-host_override=""
-stream_mode_override=""
+host_option=""
+stream_mode_option=""
 frame_count="${DEFAULT_FRAME_COUNT}"
 output_file=""
 run_check=true
@@ -42,73 +37,56 @@ probe_options=()
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [options]
+Usage: ${SCRIPT_NAME} [-c FILE] [--host HOST[:PORT]] [--stream-mode MODE] [-n N]
+                [-o FILE] [--timeout-ms MS] [--centroids] [--no-check] [-h]
 
-Record what the Vicon DataStream server sends (subjects, markers, quality,
-occlusion, latency, cameras) with vicon_probe, and write it as JSON.
+Record what the Vicon DataStream server sends (subjects, segments, markers,
+quality, occlusion, latency, cameras) with vicon_probe, and write it as JSON.
+The probe uses the same SDK calls as the node, without ROS.
 
 Options:
-  -c, --config FILE     Parameters file to take 'hostname' and 'stream_mode' from
+  -c, --config FILE     Parameters file giving 'hostname' and 'stream_mode'
                         (default: config/vicon_client.yaml)
       --host HOST[:PORT]
-                        Server address, instead of the parameters file
+                        Server address instead of 'hostname' (default port: ${VICON_DATASTREAM_PORT})
       --stream-mode MODE
-                        ServerPush, ClientPull or ClientPullPreFetch, instead of
-                        the parameters file (e.g. to compare the modes)
+                        ServerPush, ClientPull or ClientPullPreFetch instead of
+                        'stream_mode' (e.g. to compare the modes)
   -n, --frames N        Number of frames to record (default: ${DEFAULT_FRAME_COUNT})
-  -o, --output FILE     JSON output (default: probe_output/vicon_probe_<UTC time>.json)
-      --timeout-ms MS   Connection timeout of the SDK (default: SDK, 5000 ms)
+  -o, --output FILE     JSON output file
+                        (default: probe_output/vicon_probe_<UTC time>.json)
+      --timeout-ms MS   SDK connection timeout [ms] (default: 5000, the SDK's)
       --centroids       Also record the 2D centroids of every camera (heavy)
-      --no-check        Skip the reachability check
+      --no-check        Skip the reachability check of the Vicon server
   -h, --help            Show this help and exit
 
 Environment:
-  VICON_CHECK_TIMEOUT_S  Timeout of the reachability check in seconds (default: 3)
-EOF
-}
+  VICON_CHECK_TIMEOUT_S  Timeout of the reachability check [s] (default: 3)
 
-# Return the value following an option, or stop if it is missing.
-require_value()
-{
-    local option="$1"
-    local remaining="$2"
-    if [[ "${remaining}" -lt 2 ]]; then
-        die "Option ${option} requires a value."
-    fi
+Exit status (of vicon_probe): 0 recorded, 1 invalid arguments, 2 connection
+failed, 3 output file not writable, 4 stream lost while recording.
+
+Examples:
+  scripts/probe.sh
+  scripts/probe.sh --host 10.250.223.40 -n 500 -o session.json
+  scripts/probe.sh --stream-mode ClientPull -n 2000
+EOF
 }
 
 parse_args()
 {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -c | --config)
-                require_value "$1" "$#"
-                config_file="$2"
-                shift
-                ;;
-            --host)
-                require_value "$1" "$#"
-                host_override="$2"
-                shift
-                ;;
-            -n | --frames)
-                require_value "$1" "$#"
-                frame_count="$2"
-                shift
-                ;;
-            -o | --output)
-                require_value "$1" "$#"
-                output_file="$2"
-                shift
-                ;;
-            --stream-mode)
-                require_value "$1" "$#"
-                stream_mode_override="$2"
-                shift
-                ;;
-            --timeout-ms)
-                require_value "$1" "$#"
-                probe_options+=("--timeout-ms" "$2")
+            -c | --config | --host | --stream-mode | -n | --frames | -o | --output | --timeout-ms)
+                require_option_value "$1" "$#"
+                case "$1" in
+                    -c | --config) config_file="$2" ;;
+                    --host) host_option="$2" ;;
+                    --stream-mode) stream_mode_option="$2" ;;
+                    -n | --frames) frame_count="$2" ;;
+                    -o | --output) output_file="$2" ;;
+                    --timeout-ms) probe_options+=("--timeout-ms" "$2") ;;
+                esac
                 shift
                 ;;
             --centroids)
@@ -122,58 +100,43 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
     done
 }
 
-# Print the server address: --host if given, else 'hostname' from the parameters file.
-resolve_host_spec()
+# Print the value given on the command line, or else the parameter of the parameters file, so
+# that the probe measures what the node gets.
+#   $1  value of the command-line option (empty if not given)
+#   $2  parameter name in the parameters file
+option_or_config_param()
 {
-    if [[ -n "${host_override}" ]]; then
-        printf '%s\n' "${host_override}"
+    local option_value="$1"
+    local param_name="$2"
+    if [[ -n "${option_value}" ]]; then
+        printf '%s\n' "${option_value}"
         return 0
     fi
-
     require_config_file "${config_file}"
-    local host_spec=""
-    host_spec="$(read_config_param "${config_file}" "hostname")"
-    printf '%s\n' "${host_spec}"
-}
-
-# Print the stream mode: --stream-mode if given, else 'stream_mode' from the parameters
-# file, so that the probe measures what the node gets.
-resolve_stream_mode()
-{
-    if [[ -n "${stream_mode_override}" ]]; then
-        printf '%s\n' "${stream_mode_override}"
-        return 0
-    fi
-
-    require_config_file "${config_file}"
-    local stream_mode=""
-    stream_mode="$(read_config_param "${config_file}" "stream_mode")"
-    printf '%s\n' "${stream_mode}"
+    read_config_param "${config_file}" "${param_name}"
 }
 
 main()
 {
     parse_args "$@"
 
-    require_ros
-    require_install
+    require_workspace
     if [[ ! -x "${PROBE_EXECUTABLE}" ]]; then
         die "vicon_probe not found (${PROBE_EXECUTABLE})." "Run scripts/build.sh first."
     fi
 
     local host_spec=""
-    host_spec="$(resolve_host_spec)"
+    host_spec="$(option_or_config_param "${host_option}" hostname)"
     split_host_port "${host_spec}"
     local stream_mode=""
-    stream_mode="$(resolve_stream_mode)"
+    stream_mode="$(option_or_config_param "${stream_mode_option}" stream_mode)"
 
     if [[ "${run_check}" == true ]]; then
         check_vicon_reachable "${VICON_HOST}" "${VICON_PORT}"

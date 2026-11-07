@@ -9,13 +9,7 @@
 #      a clear error naming the likely cause if it does not;
 #   4. run the node with the parameters file.
 #
-# Usage:
-#   scripts/launch.sh [-c FILE] [--no-check] [-- EXTRA_ROS_ARGS...]
-#
-# Examples:
-#   scripts/launch.sh
-#   scripts/launch.sh -c config/lab_b.yaml
-#   scripts/launch.sh -- --log-level debug
+# Options: scripts/launch.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -31,21 +25,28 @@ extra_ros_args=()
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [options] [-- EXTRA_ROS_ARGS...]
+Usage: ${SCRIPT_NAME} [-c FILE] [--no-check] [-h] [-- ROS_ARGS...]
 
-Start the vicon_receiver node (vicon_client) with a parameters file, after
-checking that the Vicon DataStream server is reachable.
+Start the vicon_receiver node (${VICON_NODE_NAME}) with a parameters file, after
+checking that the Vicon DataStream server of its 'hostname' accepts connections.
+The node runs in the foreground until Ctrl+C. It exits with status 1 when a
+parameter is missing or invalid, and with status 2 when the connection to the
+Vicon server is lost (no reconnection).
 
 Options:
-  -c, --config FILE  Parameters file (default: config/vicon_client.yaml)
-      --no-check     Skip the Vicon reachability check
+  -c, --config FILE  Node parameters file (default: config/vicon_client.yaml)
+      --no-check     Skip the reachability check of the Vicon server
   -h, --help         Show this help and exit
 
-Arguments after '--' are appended to the node's --ros-args
-(e.g. '-- --log-level debug').
+Arguments after '--' are appended to the node's --ros-args.
 
 Environment:
-  VICON_CHECK_TIMEOUT_S  Timeout of the reachability check in seconds (default: 3)
+  VICON_CHECK_TIMEOUT_S  Timeout of the reachability check [s] (default: 3)
+
+Examples:
+  scripts/launch.sh
+  scripts/launch.sh -c config/lab_b.yaml
+  scripts/launch.sh -- --log-level debug
 EOF
 }
 
@@ -54,9 +55,7 @@ parse_args()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -c | --config)
-                if [[ $# -lt 2 ]]; then
-                    die "Option $1 requires a file argument."
-                fi
+                require_option_value "$1" "$#"
                 config_file="$2"
                 shift
                 ;;
@@ -73,8 +72,7 @@ parse_args()
                 break
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
@@ -87,8 +85,7 @@ main()
 
     require_config_file "${config_file}"
     config_file="$(realpath "${config_file}")"
-    require_ros
-    require_install
+    require_workspace
     # So that other ROS 2 processes on this machine (ros2 topic, recorder, viewer) see the node
     vicon_configure_dds
 

@@ -8,12 +8,7 @@
 #   2. the C++ unit tests (GoogleTest) through `colcon test`;
 #   3. the Python tests (pytest) in tests/unit and tests/integration.
 #
-# Usage:
-#   tests/run_tests.sh [--cpp | --python] [--no-build] [-- PYTEST_ARGS...]
-#
-# Examples:
-#   tests/run_tests.sh
-#   tests/run_tests.sh --python -- -k reachable -v
+# Options: tests/run_tests.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -21,13 +16,6 @@ set -Eeuo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${TESTS_DIR}/../scripts/lib/common.sh"
-
-# Packages built and tested by colcon (same list as scripts/build.sh)
-readonly PACKAGE_DIRS=(
-    "vicon_receiver_msgs"
-    "vicon_receiver"
-    "vicon_receiver_tools"
-)
 
 run_cpp=true
 run_python=true
@@ -37,10 +25,13 @@ pytest_args=()
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [options] [-- PYTEST_ARGS...]
+Usage: ${SCRIPT_NAME} [--cpp | --python] [--no-build] [-h] [-- PYTEST_ARGS...]
 
-Build the workspace with tests enabled, then run the C++ (GoogleTest, via
-colcon test) and Python (pytest) tests.
+Build the workspace with the C++ tests (BUILD_TESTING=ON), then run the C++
+tests (GoogleTest, via colcon test) and the Python tests (pytest, with the
+Python of the conda environment if it exists). No Vicon server is needed:
+integration tests skip without ROS 2 or the build, live tests without
+VICON_LIVE_HOST.
 
 Options:
   --cpp       Run only the C++ unit tests
@@ -49,6 +40,16 @@ Options:
   -h, --help  Show this help and exit
 
 Arguments after '--' are passed to pytest.
+
+Environment:
+  VICON_LIVE_HOST  host[:port] of a real Vicon server for the tests marked
+                   vicon_live (skipped when not set)
+
+Examples:
+  tests/run_tests.sh
+  tests/run_tests.sh --python -- -k reachable -v
+  tests/run_tests.sh --cpp --no-build
+  VICON_LIVE_HOST=10.250.223.40 tests/run_tests.sh --python -- -m vicon_live
 EOF
 }
 
@@ -75,29 +76,24 @@ parse_args()
                 break
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
     done
-}
 
-build_with_tests()
-{
-    info "Building ${PACKAGE_DIRS[*]} with BUILD_TESTING=ON"
-    python3 -m colcon build \
-        --base-paths "${PACKAGE_DIRS[@]}" \
-        --symlink-install \
-        --cmake-args \
-        "-DCMAKE_BUILD_TYPE=Release" \
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" \
-        "-DBUILD_TESTING=ON"
+    if [[ "${run_cpp}" == false && "${run_python}" == false ]]; then
+        die_with_usage "--cpp and --python exclude each other."
+    fi
 }
 
 # Run the C++ unit tests. Returns non-zero if any test failed.
 run_cpp_tests()
 {
+    # colcon test-result reads every result file of the folder: remove those of earlier runs,
+    # which include the results of deleted test targets
+    rm -rf "${REPO_ROOT}/build/vicon_receiver/test_results"
+
     # Only vicon_receiver registers tests with colcon; the Python tools are tested by pytest
     info "Running C++ unit tests (colcon test)"
     python3 -m colcon test \
@@ -114,12 +110,9 @@ run_python_tests()
 {
     # The conda environment has pytest, the viewer packages and the code checks; without it the
     # system Python runs the tests that do not need them
-    local python="python3"
-    local prefix=""
-    prefix="$(tools_env_prefix)"
-    if [[ -n "${prefix}" && -x "${prefix}/bin/python" ]]; then
-        python="${prefix}/bin/python"
-    fi
+    local python=""
+    python="$(tools_env_bin python)"
+    python="${python:-python3}"
     info "Running Python tests (pytest, ${python})"
     "${python}" -m pytest "${TESTS_DIR}" "${pytest_args[@]}"
 }
@@ -134,7 +127,7 @@ main()
     vicon_configure_dds
 
     if [[ "${run_build}" == true ]]; then
-        build_with_tests
+        colcon_build_workspace Release ON
     fi
 
     local failures=0

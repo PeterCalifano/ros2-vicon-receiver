@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# common.sh - Shared helpers for the scripts in scripts/.
+# common.sh - Shared helpers of the scripts in scripts/ and tests/run_tests.sh.
 #
-# Sourced (not executed) by launch.sh, probe.sh and the other entry points.
-# Provides:
-#   - logging helpers (info, warn, die)
-#   - environment checks (ROS 2 installation, built workspace)
-#   - reading values from the node parameters file (YAML)
+# Sourced (not executed) by every script. Provides:
+#   - logging and errors (info, warn, die, die_with_usage, require_option_value)
+#   - the ROS 2 environment (require_ros, require_workspace; scripts/lib/ros_env.sh)
+#   - the colcon build of the packages of this repository (colcon_build_workspace)
+#   - the Python tools: from their sources (run_tools_module) or in their conda
+#     environment (tools_env_python, tools_env_bin, exec_tools_env_module)
+#   - reading values from the YAML config files (read_config_param, read_config_key_path)
 #   - a reachability check of the Vicon DataStream server with clear errors
 #
 # Environment:
@@ -22,22 +24,28 @@ if [[ -n "${VICON_COMMON_SH_SOURCED:-}" ]]; then
 fi
 readonly VICON_COMMON_SH_SOURCED=1
 
-# Repository layout (paths are resolved from this file, so callers can run from any directory)
-COMMON_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${COMMON_SH_DIR}/../.." && pwd)"
-readonly COMMON_SH_DIR REPO_ROOT
+# ROS distribution, setup files and DDS configuration, shared with scripts/source_ros_env.sh
+# shellcheck source=scripts/lib/ros_env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/ros_env.sh"
 
-readonly ROS_DISTRO_NAME="jazzy"
-readonly ROS_SETUP_FILE="/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
-readonly WORKSPACE_SETUP_FILE="${REPO_ROOT}/install/setup.bash"
+# Repository layout (resolved by ros_env.sh, so the scripts can run from any directory)
+readonly REPO_ROOT="${VICON_REPO_ROOT}"
 readonly DEFAULT_CONFIG_FILE="${REPO_ROOT}/config/vicon_client.yaml"
+readonly DEFAULT_VIEWER_CONFIG_FILE="${REPO_ROOT}/config/viewer.yaml"
+
+# Packages of this repository, relative to the repository root (colcon workspace)
+readonly -a PACKAGE_DIRS=(
+    "vicon_receiver_msgs"
+    "vicon_receiver"
+    "vicon_receiver_tools"
+)
 
 # Sources of the vicon_receiver_tools Python package. The helpers below run its modules
 # from the sources, so they also work before the workspace is built.
 readonly TOOLS_PYTHON_DIR="${REPO_ROOT}/vicon_receiver_tools"
 
-# Conda environment of the Python tools (viewer, mount estimate, ...), created by scripts/build.sh.
-# Its name is only written in this file.
+# Conda environment of the Python tools (viewer, mount estimate, export, code checks), created by
+# scripts/build.sh. Its name is only written in this file.
 readonly TOOLS_ENVIRONMENT_FILE="${REPO_ROOT}/environment.yml"
 
 # Name of the node, which is also the top-level key of the parameters file
@@ -46,15 +54,11 @@ readonly VICON_NODE_NAME="vicon_client"
 # Port of the Vicon DataStream server (fixed by the Vicon protocol, not a tuning parameter)
 readonly VICON_DATASTREAM_PORT=801
 
-# Name of the calling script, used as prefix of every message
+# Name of the calling script, used in the usage and as prefix of every message
 SCRIPT_NAME="$(basename "$0")"
 
-# DDS configuration of this machine (vicon_configure_dds; WSL mirrored networking)
-# shellcheck source=scripts/lib/dds.sh
-source "${COMMON_SH_DIR}/dds.sh"
-
 # -----------------------------------------------------------------------------
-# Logging
+# Logging and errors
 # -----------------------------------------------------------------------------
 
 # Print an informational message to stdout.
@@ -82,39 +86,49 @@ die()
     exit 1
 }
 
-# -----------------------------------------------------------------------------
-# Environment
-# -----------------------------------------------------------------------------
-
-# Source a ROS setup file. ROS setup scripts reference unset variables, so
-# 'nounset' is disabled while sourcing them.
-source_setup_file()
+# Print the usage of the calling script (its 'usage' function) to stderr, then stop like die.
+# For command lines that cannot be understood: unknown option, missing argument.
+die_with_usage()
 {
-    local setup_file="$1"
-    set +u
-    # shellcheck disable=SC1090  # path is only known at runtime
-    source "${setup_file}"
-    set -u
+    usage >&2
+    die "$@"
 }
+
+# Stop if an option that takes a value has none.
+#   $1  the option (e.g. --config)
+#   $2  number of arguments left, the option included ('$#' in parse_args)
+require_option_value()
+{
+    local option="$1"
+    local remaining="$2"
+    if [[ "${remaining}" -lt 2 ]]; then
+        die "Option ${option} requires a value."
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# ROS 2 environment and build
+# -----------------------------------------------------------------------------
 
 # Make sure ROS 2 is installed and source it.
 require_ros()
 {
-    if [[ ! -f "${ROS_SETUP_FILE}" ]]; then
-        die "ROS 2 ${ROS_DISTRO_NAME} not found (${ROS_SETUP_FILE} is missing)." \
+    if [[ ! -f "${VICON_ROS_SETUP_FILE}" ]]; then
+        die "ROS 2 ${VICON_ROS_DISTRO} not found (${VICON_ROS_SETUP_FILE} is missing)." \
             "Run scripts/build.sh first: it installs ROS 2 and builds the workspace."
     fi
-    source_setup_file "${ROS_SETUP_FILE}"
+    vicon_source_setup_file "${VICON_ROS_SETUP_FILE}"
 }
 
-# Make sure the workspace has been built and source its overlay.
-require_install()
+# Make sure ROS 2 is installed and the workspace has been built, and source both.
+require_workspace()
 {
-    if [[ ! -f "${WORKSPACE_SETUP_FILE}" ]]; then
-        die "Workspace not built (${WORKSPACE_SETUP_FILE} is missing)." \
+    require_ros
+    if [[ ! -f "${VICON_WORKSPACE_SETUP_FILE}" ]]; then
+        die "Workspace not built (${VICON_WORKSPACE_SETUP_FILE} is missing)." \
             "Run scripts/build.sh first."
     fi
-    source_setup_file "${WORKSPACE_SETUP_FILE}"
+    vicon_source_setup_file "${VICON_WORKSPACE_SETUP_FILE}"
 }
 
 # Make sure colcon is importable by the python3 in use. An active virtual
@@ -128,15 +142,46 @@ require_colcon()
     fi
 }
 
-# Run a module of the vicon_receiver_tools Python package from its sources.
+# Build the packages of this repository with colcon. build/, install/ and log/ are created at
+# the repository root.
+#   $1  CMake build type (Release or Debug)
+#   $2  BUILD_TESTING: ON compiles the C++ tests (tests/unit/cpp), OFF skips them
+colcon_build_workspace()
+{
+    local build_type="$1"
+    local build_testing="$2"
+    info "Building ${PACKAGE_DIRS[*]} (${build_type}, BUILD_TESTING=${build_testing})"
+    (
+        cd "${REPO_ROOT}" || exit 1
+        python3 -m colcon build \
+            --base-paths "${PACKAGE_DIRS[@]}" \
+            --symlink-install \
+            --cmake-args \
+            "-DCMAKE_BUILD_TYPE=${build_type}" \
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" \
+            "-DBUILD_TESTING=${build_testing}"
+    )
+}
+
+# -----------------------------------------------------------------------------
+# Python tools
+# -----------------------------------------------------------------------------
+
+# Print the PYTHONPATH that imports vicon_receiver_tools from its sources.
+tools_pythonpath()
+{
+    printf '%s\n' "${TOOLS_PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+}
+
+# Run a module of the vicon_receiver_tools Python package from its sources, with the python3
+# in use (for the modules that need only the standard library and PyYAML: config, network).
 #   $1   module name (e.g. 'config' for vicon_receiver_tools.config)
 #   $2.. arguments of the module
 run_tools_module()
 {
     local module="$1"
     shift
-    PYTHONPATH="${TOOLS_PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
-        python3 -m "vicon_receiver_tools.${module}" "$@"
+    PYTHONPATH="$(tools_pythonpath)" python3 -m "vicon_receiver_tools.${module}" "$@"
 }
 
 # Print the name of the conda environment of the Python tools.
@@ -163,19 +208,50 @@ tools_env_prefix()
     fi
 }
 
+# Print the path of a program of the tools environment (e.g. python, clang-format); nothing if
+# the environment or the program does not exist.
+#   $1  program name
+tools_env_bin()
+{
+    local program="$1"
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -n "${prefix}" && -x "${prefix}/bin/${program}" ]]; then
+        printf '%s\n' "${prefix}/bin/${program}"
+    fi
+}
+
 # Print the Python interpreter of the tools environment; error if the environment does not exist.
 tools_env_python()
 {
-    local prefix=""
-    prefix="$(tools_env_prefix)"
-    if [[ -z "${prefix}" || ! -x "${prefix}/bin/python" ]]; then
+    local python=""
+    python="$(tools_env_bin python)"
+    if [[ -z "${python}" ]]; then
         die "Conda environment '$(tools_env_name)' not found." \
             "Create it with: conda env create -f ${TOOLS_ENVIRONMENT_FILE}"
     fi
-    echo "${prefix}/bin/python"
+    printf '%s\n' "${python}"
 }
 
-# Make sure a parameters file exists.
+# Replace the shell with a module of vicon_receiver_tools, run from its sources by the Python of
+# the tools environment (viewer, export: they need its packages).
+#   $1   module name (e.g. 'viewer' for vicon_receiver_tools.viewer)
+#   $2.. arguments of the module
+exec_tools_env_module()
+{
+    local module="$1"
+    shift
+    local python=""
+    python="$(tools_env_python)"
+    PYTHONPATH="$(tools_pythonpath)" exec "${python}" -m "vicon_receiver_tools.${module}" "$@"
+}
+
+# -----------------------------------------------------------------------------
+# Config files
+# -----------------------------------------------------------------------------
+
+# Make sure a config file exists.
+#   $1  config file
 require_config_file()
 {
     local config_file="$1"
@@ -184,30 +260,43 @@ require_config_file()
     fi
 }
 
-# -----------------------------------------------------------------------------
-# Parameters file
-# -----------------------------------------------------------------------------
-
-# Print the value of one parameter of the vicon_client node from a parameters file
-# (see vicon_receiver_tools/vicon_receiver_tools/config.py).
-#   $1  parameters file (YAML)
-#   $2  parameter name (key under vicon_client.ros__parameters)
+# Print one value of a YAML config file (see vicon_receiver_tools/vicon_receiver_tools/config.py).
 # Terminates with a clear error if the file cannot be parsed or the key is missing.
-# Call it as 'value="$(read_config_param ...)"' with 'value' declared beforehand:
-# 'local value="$(...)"' would hide the failure from 'set -e'.
-read_config_param()
+#   $1   config file
+#   $2.. key and options of the config module
+read_config_value()
 {
     local config_file="$1"
-    local param_name="$2"
-
+    shift
     # On success the module prints only the value; on failure only the error message.
     local output=""
-    if ! output="$(run_tools_module config \
-        "${config_file}" "${param_name}" --node "${VICON_NODE_NAME}" 2>&1)"; then
+    if ! output="$(run_tools_module config "${config_file}" "$@" 2>&1)"; then
         die "Invalid config file: ${output}"
     fi
     printf '%s\n' "${output}"
 }
+
+# Print the value of one parameter of the vicon_client node from a parameters file.
+#   $1  parameters file (YAML)
+#   $2  parameter name (key under vicon_client.ros__parameters)
+# Call it as 'value="$(read_config_param ...)"' with 'value' declared beforehand:
+# 'local value="$(...)"' would hide the failure from 'set -e'. Same for read_config_key_path.
+read_config_param()
+{
+    read_config_value "$1" "$2" --node "${VICON_NODE_NAME}"
+}
+
+# Print one value of a YAML config file by its dotted key path (e.g. robot.source).
+#   $1  config file (YAML)
+#   $2  dotted key path
+read_config_key_path()
+{
+    read_config_value "$1" "$2" --key-path
+}
+
+# -----------------------------------------------------------------------------
+# Vicon reachability
+# -----------------------------------------------------------------------------
 
 # Split a "host[:port]" string into the globals VICON_HOST and VICON_PORT.
 # The port defaults to the DataStream port when not given.
@@ -235,10 +324,6 @@ split_host_port()
         die "Invalid port '${VICON_PORT}' in hostname '${host_spec}'."
     fi
 }
-
-# -----------------------------------------------------------------------------
-# Vicon reachability
-# -----------------------------------------------------------------------------
 
 # Return 0 if the argument is a dotted IPv4 address.
 is_ipv4_address()

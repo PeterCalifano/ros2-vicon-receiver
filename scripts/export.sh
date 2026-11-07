@@ -6,8 +6,7 @@
 # only converts it, when asked, into files for analysis tools, written to
 # <session>/exports/. The format is required: nothing is exported by default.
 #
-# Usage:
-#   scripts/export.sh SESSION_DIR --format csv[,hdf5]
+# Options: scripts/export.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -21,16 +20,27 @@ formats=""
 
 usage()
 {
-    cat <<USAGE
-Usage: $(basename "$0") SESSION_DIR --format FORMATS
+    cat <<EOF
+Usage: ${SCRIPT_NAME} SESSION_DIR --format FORMATS [-h]
 
-Export the ViconFrame messages of a recorded session to <session>/exports/.
+Export the ViconFrame messages of a recorded session to <SESSION_DIR>/exports/.
+Runs in the conda environment of environment.yml (scripts/build.sh creates it).
 
 Arguments:
-  SESSION_DIR        Session directory created by scripts/record.sh
-  --format FORMATS   Comma-separated: csv, hdf5 (required)
-  -h, --help         Show this help and exit
-USAGE
+  SESSION_DIR          Session directory created by scripts/record.sh
+
+Options:
+  --format FORMATS     Comma-separated list, required:
+                         csv   frames.csv (one row per frame),
+                               poses_<frame_id>.csv (one file per segment),
+                               markers_<subject>.csv (one file per subject)
+                         hdf5  session.h5 (arrays aligned on the frame index)
+  -h, --help           Show this help and exit
+
+Examples:
+  scripts/export.sh recordings/20261030T101500Z_walk --format csv
+  scripts/export.sh recordings/20261030T101500Z_walk --format csv,hdf5
+EOF
 }
 
 parse_args()
@@ -38,9 +48,7 @@ parse_args()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --format)
-                if [[ $# -lt 2 ]]; then
-                    die "Option $1 requires a value."
-                fi
+                require_option_value "$1" "$#"
                 formats="$2"
                 shift
                 ;;
@@ -49,8 +57,7 @@ parse_args()
                 exit 0
                 ;;
             -*)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
             *)
                 if [[ -n "${session_dir}" ]]; then
@@ -63,8 +70,7 @@ parse_args()
     done
 
     if [[ -z "${session_dir}" || -z "${formats}" ]]; then
-        usage >&2
-        die "A session directory and --format are required."
+        die_with_usage "A session directory and --format are required."
     fi
 }
 
@@ -74,14 +80,8 @@ main()
     if [[ ! -d "${session_dir}" ]]; then
         die "Session directory not found: ${session_dir}"
     fi
-    require_ros
-    require_install
-    local tools_python=""
-    tools_python="$(tools_env_python)"
-
-    PYTHONPATH="${TOOLS_PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
-        exec "${tools_python}" -m vicon_receiver_tools.export \
-        "$(realpath "${session_dir}")" --format "${formats}"
+    require_workspace
+    exec_tools_env_module export "$(realpath "${session_dir}")" --format "${formats}"
 }
 
 main "$@"

@@ -48,8 +48,8 @@ tests/
     cpp/test_vicon_receiver_node_publishers.cpp  GoogleTest: publisher creation with Vicon names
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer and options
     test_common_sh.py                  scripts/lib/common.sh functions
-    test_dds_sh.py                     scripts/lib/dds.sh (WSL mirrored networking detection/profile)
-    test_scripts_cli.py                command-line handling of scripts/*.sh
+    test_ros_env_sh.py                 scripts/lib/ros_env.sh (setup files, WSL mirrored networking detection/profile), source_ros_env.sh
+    test_scripts_cli.py                command line and usage layout of scripts/* and tests/run_tests.sh
     test_static_checks.py              shellcheck and clang-format (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)

@@ -6,13 +6,7 @@
 # .clang-format file at the repository root. Vendored third-party code is
 # never touched.
 #
-# Usage:
-#   scripts/format.sh            # format files in place
-#   scripts/format.sh --check    # only report files that are not formatted
-#
-# Environment:
-#   CLANG_FORMAT   clang-format executable to use (default: the pinned one of the conda
-#                  environment of environment.yml, else clang-format on PATH)
+# Options: scripts/format.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -33,32 +27,25 @@ check_only=false
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [--check] [-h|--help]
+Usage: ${SCRIPT_NAME} [--check] [-h]
 
-Format the C++ sources of this repository with clang-format.
+Format the C++ files of this repository in place with clang-format and the
+.clang-format file at the repository root (vendored code is never touched).
+Folders: ${SOURCE_DIRS[*]}
 
 Options:
-  --check     Do not modify files; exit with an error if any file needs formatting.
-  -h, --help  Show this help and exit.
+  --check     Only check: change no file, fail if any file needs formatting
+  -h, --help  Show this help and exit
 
-The clang-format executable can be overridden with the CLANG_FORMAT variable.
+Environment:
+  CLANG_FORMAT  clang-format executable (default: the one pinned in the conda
+                environment of environment.yml, else clang-format on PATH)
+
+Examples:
+  scripts/format.sh
+  scripts/format.sh --check
+  CLANG_FORMAT=clang-format-18 scripts/format.sh
 EOF
-}
-
-# Print the clang-format to use: CLANG_FORMAT, the conda environment's, or the one on PATH.
-find_clang_format()
-{
-    if [[ -n "${CLANG_FORMAT:-}" ]]; then
-        echo "${CLANG_FORMAT}"
-        return 0
-    fi
-    local prefix=""
-    prefix="$(tools_env_prefix)"
-    if [[ -n "${prefix}" && -x "${prefix}/bin/clang-format" ]]; then
-        echo "${prefix}/bin/clang-format"
-    else
-        echo "clang-format"
-    fi
 }
 
 parse_args()
@@ -73,12 +60,23 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
     done
+}
+
+# Print the clang-format to use: CLANG_FORMAT, the conda environment's, or the one on PATH.
+find_clang_format()
+{
+    if [[ -n "${CLANG_FORMAT:-}" ]]; then
+        echo "${CLANG_FORMAT}"
+        return 0
+    fi
+    local environment_clang_format=""
+    environment_clang_format="$(tools_env_bin clang-format)"
+    echo "${environment_clang_format:-clang-format}"
 }
 
 # Collect all C++ files in SOURCE_DIRS into the global array CPP_FILES.
@@ -110,17 +108,17 @@ main()
 
     collect_files
     if [[ ${#CPP_FILES[@]} -eq 0 ]]; then
-        echo "[format.sh] No C++ files found."
+        info "No C++ files found."
         exit 0
     fi
 
     if [[ "${check_only}" == true ]]; then
         # --dry-run + --Werror makes clang-format fail on the first unformatted file
         "${clang_format}" --style=file --dry-run --Werror "${CPP_FILES[@]}"
-        echo "[format.sh] ${#CPP_FILES[@]} files checked, all formatted."
+        info "${#CPP_FILES[@]} files checked, all formatted."
     else
         "${clang_format}" --style=file -i "${CPP_FILES[@]}"
-        echo "[format.sh] ${#CPP_FILES[@]} files formatted."
+        info "${#CPP_FILES[@]} files formatted."
     fi
 }
 

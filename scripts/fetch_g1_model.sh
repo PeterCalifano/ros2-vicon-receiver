@@ -5,8 +5,7 @@
 # Source and destination come from config/viewer.yaml (robot.source,
 # robot.directory). The copy is made with rsync over ssh and is git-ignored.
 #
-# Usage:
-#   scripts/fetch_g1_model.sh [-c FILE]
+# Options: scripts/fetch_g1_model.sh --help
 # =============================================================================
 
 set -Eeuo pipefail
@@ -15,19 +14,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-viewer_config="${REPO_ROOT}/config/viewer.yaml"
+viewer_config="${DEFAULT_VIEWER_CONFIG_FILE}"
 
 usage()
 {
     cat <<EOF
-Usage: $(basename "$0") [options]
+Usage: ${SCRIPT_NAME} [-c FILE] [-h]
 
-Copy the G1 Unitree model used by the live viewer from robot.source to
-robot.directory (both in the viewer config), with rsync over ssh.
+Copy the G1 Unitree model shown by the live viewer (URDF + meshes) from
+robot.source ([user@]host:path) to robot.directory, both in the viewer config,
+with rsync over ssh; then check that robot.urdf is in the copy. ssh to the
+source host must work without a password prompt (ssh-agent or key).
 
 Options:
   -c, --config FILE  Viewer config (default: config/viewer.yaml)
   -h, --help         Show this help and exit
+
+Examples:
+  scripts/fetch_g1_model.sh
+  scripts/fetch_g1_model.sh -c config/viewer_lab_b.yaml
 EOF
 }
 
@@ -36,9 +41,7 @@ parse_args()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -c | --config)
-                if [[ $# -lt 2 ]]; then
-                    die "Option $1 requires a file argument."
-                fi
+                require_option_value "$1" "$#"
                 viewer_config="$2"
                 shift
                 ;;
@@ -47,23 +50,11 @@ parse_args()
                 exit 0
                 ;;
             *)
-                usage >&2
-                die "Unknown option: $1"
+                die_with_usage "Unknown option: $1"
                 ;;
         esac
         shift
     done
-}
-
-# Print one value of the viewer config (dotted key path).
-read_viewer_value()
-{
-    local key_path="$1"
-    local output=""
-    if ! output="$(run_tools_module config "${viewer_config}" "${key_path}" --key-path 2>&1)"; then
-        die "Invalid viewer config: ${output}"
-    fi
-    printf '%s\n' "${output}"
 }
 
 main()
@@ -72,11 +63,11 @@ main()
     require_config_file "${viewer_config}"
 
     local source=""
-    source="$(read_viewer_value robot.source)"
+    source="$(read_config_key_path "${viewer_config}" robot.source)"
     local directory=""
-    directory="$(read_viewer_value robot.directory)"
+    directory="$(read_config_key_path "${viewer_config}" robot.directory)"
     local urdf=""
-    urdf="$(read_viewer_value robot.urdf)"
+    urdf="$(read_config_key_path "${viewer_config}" robot.urdf)"
 
     # Relative destinations are relative to the repository root
     if [[ "${directory}" != /* ]]; then

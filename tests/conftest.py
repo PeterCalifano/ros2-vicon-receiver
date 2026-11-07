@@ -33,11 +33,34 @@ if str(TOOLS_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_PYTHON_DIR))
 SCRIPTS_DIR: Path = REPO_ROOT / "scripts"
 COMMON_SH: Path = SCRIPTS_DIR / "lib" / "common.sh"
-DDS_SH: Path = SCRIPTS_DIR / "lib" / "dds.sh"
+ROS_ENV_SH: Path = SCRIPTS_DIR / "lib" / "ros_env.sh"
 CONFIG_FILE: Path = REPO_ROOT / "config" / "vicon_client.yaml"
 FAKE_BIN_DIR: Path = REPO_ROOT / "tests" / "fixtures" / "fake_bin"
-ROS_SETUP_FILE: Path = Path("/opt/ros/jazzy/setup.bash")
-WORKSPACE_SETUP_FILE: Path = REPO_ROOT / "install" / "setup.bash"
+
+
+def Ros_env_variable(name: str) -> str:
+    """Value of a variable defined by scripts/lib/ros_env.sh (the ROS distribution and setup files
+    are written only there)."""
+    return subprocess.run(
+        ["bash", "-c", f'source "{ROS_ENV_SH}"; printf "%s" "${{{name}}}"'],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def Tools_env_python() -> str:
+    """Python of the conda environment of the tools (environment.yml), or "" if it is missing."""
+    return subprocess.run(
+        ["bash", "-c", f'source "{COMMON_SH}"; tools_env_bin python'],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+
+
+ROS_SETUP_FILE: Path = Path(Ros_env_variable("VICON_ROS_SETUP_FILE"))
+WORKSPACE_SETUP_FILE: Path = Path(Ros_env_variable("VICON_WORKSPACE_SETUP_FILE"))
 NODE_EXECUTABLE: Path = (
     REPO_ROOT / "install" / "vicon_receiver" / "lib" / "vicon_receiver" / "vicon_client"
 )
@@ -258,14 +281,13 @@ def tcp_listener() -> Iterator[TcpListener]:
 def Load_ros_environment() -> dict[str, str]:
     """Return the environment obtained by sourcing ROS 2 and the workspace overlay.
 
-    The DDS configuration of the machine is applied as in the scripts (scripts/lib/dds.sh), so
-    that the ROS 2 processes started by the tests see each other also on WSL.
+    The DDS configuration of the machine is applied as in the scripts (scripts/lib/ros_env.sh),
+    so that the ROS 2 processes started by the tests see each other also on WSL.
     """
     command_ = (
-        "set +u; "
-        f'source "{ROS_SETUP_FILE}"; '
-        f'source "{WORKSPACE_SETUP_FILE}"; '
-        f'source "{DDS_SH}"; '
+        f'source "{ROS_ENV_SH}"; '
+        'vicon_source_setup_file "${VICON_ROS_SETUP_FILE}"; '
+        'vicon_source_setup_file "${VICON_WORKSPACE_SETUP_FILE}"; '
         "vicon_configure_dds >/dev/null; "
         "env -0"
     )
@@ -295,7 +317,7 @@ def ros_env() -> dict[str, str]:
 
     environment_ = Load_ros_environment()
     # Keep test traffic on this machine, away from other ROS 2 systems on the network. With the
-    # WSL profile (scripts/lib/dds.sh) traffic is already local, and LOCALHOST would override the
+    # WSL profile (scripts/lib/ros_env.sh) traffic is already local, and LOCALHOST would override the
     # profile with redirected 127.0.0.1 peers: let the profile decide.
     if environment_.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
         environment_["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "SYSTEM_DEFAULT"

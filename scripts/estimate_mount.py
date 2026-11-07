@@ -8,8 +8,7 @@ of vicon_receiver_tools/mount_estimate.py: it reads the set-up facts of config/v
 (mount_estimate: left/right marker pairs, markers on other links) and turns marker names into the
 indices and surfaces the method takes.
 
-Usage:
-    scripts/estimate_mount.py -r RECORDING.json [-c VIEWER_CONFIG] [--write]
+Options: scripts/estimate_mount.py --help
 
 Runs in the conda environment of environment.yml (trimesh, yourdfpy): started with another
 interpreter, it restarts itself with the Python of that environment.
@@ -22,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
@@ -30,18 +30,40 @@ TOOLS_DIR: Path = REPO_ROOT / "vicon_receiver_tools"
 DEFAULT_VIEWER_CONFIG: Path = REPO_ROOT / "config" / "viewer.yaml"
 SCRIPT_NAME: str = Path(__file__).name
 
-USAGE: str = f"""Usage: {SCRIPT_NAME} -r RECORDING.json [options]
+USAGE: str = f"""Usage: {SCRIPT_NAME} -r FILE [-c FILE] [--write] [-h]
 
-Estimate the pose of the robot mount link in the Vicon body frame from a probe
-recording: link upright, heading from the left/right marker pairs of the viewer
-config, position fitted to the robot meshes. For the viewer, not a calibration.
+Estimate the pose of the robot mount link (robot.mount_link) in the Vicon body
+frame from a probe recording with markers: link upright, heading from the
+left/right marker pairs of the viewer config (mount_estimate), position fitted
+to the robot meshes. Prints the estimate; --write saves it to robot.mount_file,
+which the live viewer loads. For the viewer, not a calibration.
+Runs in the conda environment of environment.yml (scripts/build.sh creates it).
 
 Options:
-  -r, --recording FILE  Probe recording (scripts/probe.sh), with markers
+  -r, --recording FILE  Probe recording (scripts/probe.sh), required
   -c, --config FILE     Viewer config (default: config/viewer.yaml)
       --write           Save the result to the mount file of the viewer config
   -h, --help            Show this help and exit
+
+Examples:
+  scripts/estimate_mount.py -r probe_output/g1_static.json
+  scripts/estimate_mount.py -r probe_output/g1_static.json --write
 """
+
+
+@dataclass
+class EstimateOptions:
+    """Command-line options of the script.
+
+    Attributes:
+        recording: Probe recording (JSON), None until given.
+        config: Viewer config.
+        write: Whether to save the result to the mount file.
+    """
+
+    recording: Path | None = None
+    config: Path = DEFAULT_VIEWER_CONFIG
+    write: bool = False
 
 
 def Fail(message: str) -> int:
@@ -69,13 +91,15 @@ def Tools_env_prefix(name: str) -> Path | None:
     return None
 
 
-def Parse_arguments(argv: list[str]) -> dict[str, object] | int:
+def Fail_with_usage(message: str) -> int:
+    """Print the usage and an error to stderr, for command lines that cannot be understood."""
+    print(USAGE, end="", file=sys.stderr)
+    return Fail(message)
+
+
+def Parse_arguments(argv: list[str]) -> EstimateOptions | int:
     """Options of the command line, or an exit status (help shown, or an error)."""
-    options_: dict[str, object] = {
-        "recording": None,
-        "config": DEFAULT_VIEWER_CONFIG,
-        "write": False,
-    }
+    options_ = EstimateOptions()
     index_ = 0
     while index_ < len(argv):
         argument_ = argv[index_]
@@ -84,17 +108,20 @@ def Parse_arguments(argv: list[str]) -> dict[str, object] | int:
             return 0
         if argument_ in ("-r", "--recording", "-c", "--config"):
             if index_ + 1 >= len(argv):
-                return Fail(f"Option {argument_} requires a file argument.")
-            key_ = "recording" if argument_ in ("-r", "--recording") else "config"
-            options_[key_] = Path(argv[index_ + 1])
+                return Fail(f"Option {argument_} requires a value.")
+            if argument_ in ("-r", "--recording"):
+                options_.recording = Path(argv[index_ + 1])
+            else:
+                options_.config = Path(argv[index_ + 1])
             index_ += 2
             continue
         if argument_ == "--write":
-            options_["write"] = True
+            options_.write = True
             index_ += 1
             continue
-        print(USAGE, end="", file=sys.stderr)
-        return Fail(f"Unknown option: {argument_}")
+        return Fail_with_usage(f"Unknown option: {argument_}")
+    if options_.recording is None:
+        return Fail_with_usage("A probe recording is required (-r).")
     return options_
 
 
@@ -104,12 +131,9 @@ def Main(argv: list[str]) -> int:
     if isinstance(options_, int):
         return options_
 
-    recording_ = options_["recording"]
-    config_ = options_["config"]
-    if recording_ is None:
-        print(USAGE, end="", file=sys.stderr)
-        return Fail("A probe recording is required (-r).")
-    assert isinstance(recording_, Path) and isinstance(config_, Path)
+    recording_ = options_.recording
+    config_ = options_.config
+    assert recording_ is not None
     for path_ in (recording_, config_):
         if not path_.is_file():
             return Fail(f"File not found: {path_}")
@@ -125,7 +149,7 @@ def Main(argv: list[str]) -> int:
 
     # Tools from their sources, as the shell scripts do (works before the build)
     sys.path.insert(0, str(TOOLS_DIR))
-    return Estimate(recording_, config_, bool(options_["write"]))
+    return Estimate(recording_, config_, options_.write)
 
 
 def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
@@ -176,6 +200,7 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
         mount_estimate.Write_mount_file(mount_path_, mount_link_, config_.robot.subject, estimate_, str(shown_))
         print(f"written: {mount_path_}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(Main(sys.argv[1:]))

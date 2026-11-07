@@ -18,7 +18,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import CONFIG_FILE, REPO_ROOT, SCRIPTS_DIR, ConfigFactory, Wait_or_kill
+from conftest import (
+    CONFIG_FILE,
+    REPO_ROOT,
+    SCRIPTS_DIR,
+    ConfigFactory,
+    Tools_env_python,
+    Wait_or_kill,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -114,6 +121,10 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
 
     # Nothing is exported unless asked: no exports/ yet
     assert not (session_ / "exports").exists()
+
+    # export.sh runs in the conda environment of environment.yml (h5py, rosbag2 through ROS)
+    if not Tools_env_python():
+        pytest.skip("conda environment of environment.yml missing (scripts/build.sh): export untested")
 
     export_ = subprocess.run(
         [str(SCRIPTS_DIR / "export.sh"), str(session_), "--format", "csv,hdf5"],
