@@ -13,11 +13,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -237,6 +242,39 @@ namespace tcp_keepalive_tests
     TEST(TcpKeepalive, ClosedSocketCannotBeConfigured)
     {
         EXPECT_THROW(enable_tcp_keepalive(-1, 5), std::system_error);
+    }
+
+    TEST(TcpKeepalive, DeadPeerIsDetectedWithinTheTimeout)
+    {
+        // Drops every packet on lo: only inside the private user + network namespace that
+        // tests/integration/test_connection_loss.py creates (no root needed there)
+        const char *in_namespace = std::getenv("VICON_TEST_NETWORK_NAMESPACE");
+        if (in_namespace == nullptr || std::string(in_namespace) != "1")
+        {
+            GTEST_SKIP() << "needs a private network namespace: "
+                            "tests/integration/test_connection_loss.py runs it";
+        }
+
+        LocalConnection connection;
+        ASSERT_GE(connection.accepted, 0);
+        constexpr int kTimeoutS = 3;
+        enable_tcp_keepalive(connection.client, kTimeoutS);
+
+        // From now on the peer never answers, as with a Tracker switched off or a cable pulled
+        ASSERT_EQ(std::system("tc qdisc add dev lo root netem loss 100%"), 0);
+        const auto start = std::chrono::steady_clock::now();
+        pollfd poll_fd{connection.client, POLLIN, 0};
+        const int ready = poll(&poll_fd, 1, 20000);
+        const double elapsed_s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        ASSERT_EQ(ready, 1) << "dead connection not reported within 20 s";
+
+        int error = 0;
+        socklen_t length = sizeof(error);
+        getsockopt(connection.client, SOL_SOCKET, SO_ERROR, &error, &length);
+        EXPECT_EQ(error, ETIMEDOUT) << std::strerror(error);
+        EXPECT_GE(elapsed_s, kTimeoutS - 1.0);
+        EXPECT_LE(elapsed_s, kTimeoutS + 4.0);
     }
 } // namespace tcp_keepalive_tests
 

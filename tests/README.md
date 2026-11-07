@@ -60,6 +60,7 @@ tests/
     test_tools_export.py               export to CSV without ROS (fake reader), partial-output cleanup
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
+    test_connection_loss.py     dead peer detected by the keepalive options, in a private network namespace (unshare + tc netem)
     test_messages.py            vicon_receiver_msgs field names and types (interface pin)
     test_node_live.py           vicon_client against a real server: ViconFrame content (vicon_live)
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)

@@ -115,6 +115,17 @@ TEST(ViconReceiverNodePublishers, InvalidNamespaceIsRejectedAtStartup)
     EXPECT_THROW(ViconReceiverNode node(make_options("bad namespace")), std::invalid_argument);
 }
 
+TEST(ViconReceiverNodeConnection, LostConnectionStopsTheFrameLoop)
+{
+    // A node that never connected gets NotConnected from the SDK, as after a lost connection:
+    // the frame loop stops at once with the connection-lost exit status (no reconnection)
+    auto node = std::make_shared<ViconReceiverNode>(make_options("test_connection"));
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(node->run_frame_loop(), ViconReceiverNode::kConnectionLostExitStatus);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(5));
+}
+
 // -------------------------------------------------------------------------------------------------
 // Test entry point: rclcpp must be initialised once for the whole test binary
 // -------------------------------------------------------------------------------------------------

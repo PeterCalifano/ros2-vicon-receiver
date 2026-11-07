@@ -107,6 +107,8 @@ This is NOT an official ROS 2 package, but it has been successfully tested with 
 
 ### Option A — VS Code Dev Container (recommended for development)
 
+> TODO: the Dev Container has not been rebuilt or tested since the scripts, viewer and recording were added. Option C is the tested path.
+
 1. Open the repo in VS Code.
 2. When prompted, **Reopen in Container**. The first time this may take a while as the container image is built.
     > If the prompt does not appear, try opening the Command Palette (`Ctrl+Shift+P`) and selecting "Dev Containers: Rebuild and Reopen in Container".

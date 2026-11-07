@@ -185,6 +185,9 @@ class ViconReceiverNode : public rclcpp::Node
     /// Name of the node; also the top-level key of the parameters file.
     static constexpr const char *kNodeName = "vicon_client";
 
+    /// Exit status of the node when the connection to the Vicon server is lost.
+    static constexpr int kConnectionLostExitStatus = 2;
+
     /**
      * @brief Create the node, read and validate its parameters and publish the static
      *        world_frame -> vicon_frame transform. Does not connect to the Vicon server.
@@ -216,6 +219,15 @@ class ViconReceiverNode : public rclcpp::Node
      *         true otherwise (frame published, or no frame available yet).
      */
     bool get_frame();
+
+    /**
+     * @brief Receive and publish frames (get_frame()) until ROS 2 shuts down or the connection
+     *        to the Vicon server is lost.
+     *
+     * @return 0 when ROS 2 was shut down (Ctrl+C); kConnectionLostExitStatus when the connection
+     *         was lost (logged as FATAL; no reconnection, e.g. for a supervisor to restart the node).
+     */
+    int run_frame_loop();
 
     // functions to create a segment publisher in a new thread
     void create_publisher(const string subject_name, const string segment_name);

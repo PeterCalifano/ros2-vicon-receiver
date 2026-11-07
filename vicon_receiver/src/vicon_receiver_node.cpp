@@ -422,6 +422,21 @@ bool ViconReceiverNode::accept_live_frame(const double receive_steady_s)
 }
 
 // Receive one frame and publish it
+int ViconReceiverNode::run_frame_loop()
+{
+    while (rclcpp::ok())
+    {
+        if (!get_frame())
+        {
+            RCLCPP_FATAL(this->get_logger(),
+                         "Connection to the Vicon server lost (no answer for the connection "
+                         "timeout, or closed by the server): stopping");
+            return kConnectionLostExitStatus;
+        }
+    }
+    return 0;
+}
+
 bool ViconReceiverNode::get_frame()
 {
     // Waits for the next frame (ServerPush) or requests the latest one (ClientPull)
