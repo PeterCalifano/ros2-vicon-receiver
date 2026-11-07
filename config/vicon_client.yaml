@@ -55,3 +55,31 @@ vicon_client:
     # Period of the status line (rate, dropped frames, latency, quality, occlusion,
     # cameras per marker) [s]; 0.0 disables it.
     status_period_s: 1.0
+
+    # --- Publishing ---
+    # Depth of the ViconFrame publisher queue [frames] (100 = 1 s at 100 Hz): a slow
+    # subscriber, e.g. a recorder, gets every frame instead of only the latest.
+    frame_queue_depth: 100
+
+    # --- Connection ---
+    # Seconds without any answer from the Vicon server (TCP keepalive probes, sent
+    # every second while no data arrives) before the connection counts as lost; the
+    # node then stops with exit status 2 (no reconnection). An idle server that is
+    # still reachable answers the probes. Range 2..3600.
+    connection_timeout_s: 5
+
+    # --- Start of a connection ---
+    # A Vicon server first sends 1-2 frames left over from its previous session,
+    # back to back. Frames are published once this many consecutive frame numbers
+    # have arrived at a plausible pace (>= 2; leftovers were seen consecutive).
+    live_stream_confirmation_frames: 3
+
+    # --- Local clock check ---
+    # The local clock is compared with the Vicon frame clock (frame numbers / rate)
+    # over measurements of clock_check_measurement_s, using the least delayed frame
+    # of the first and last clock_check_block_s (arrival jitter ~10 ms is 0.1 % of
+    # 10 s). A warning is logged if the rates differ by more than
+    # clock_rate_warning_limit (0.01 = 1 %; healthy clocks differ by a few ppm).
+    clock_check_measurement_s: 10.0
+    clock_check_block_s: 1.0
+    clock_rate_warning_limit: 0.01

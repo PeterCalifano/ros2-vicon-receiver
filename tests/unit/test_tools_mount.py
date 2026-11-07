@@ -17,10 +17,11 @@ trimesh = pytest.importorskip("trimesh")
 pytest.importorskip("yourdfpy")
 
 from vicon_receiver_tools.mount_estimate import (  # noqa: E402
-    Fit_mount,
+    Estimate_upright_mount,
+    Lateral_direction_deg,
     Marker_constellation,
     MountEstimateError,
-    Top_marker_indices,
+    SampledMeshSurface,
 )
 from vicon_receiver_tools.robot_model import (  # noqa: E402
     Link_pose,
@@ -158,37 +159,91 @@ def Synthetic_robot() -> tuple[object, object]:
     return trimesh.util.concatenate([torso_, head_]), head_
 
 
-def test_fit_mount_recovers_markers_on_the_surface() -> None:
-    """Markers placed 1 cm off a known surface are fitted back onto it, top ones on the head."""
+# Marker centres in the torso link frame: head markers on the head sides (one higher), shoulder
+# markers left/right at the same height, three more on the torso faces
+OFFSET_M: float = 0.010
+LINK_MARKERS: np.ndarray = np.array(
+    [
+        [0.15 + OFFSET_M, 0.05, -0.10],  # torso front
+        [-0.15 - OFFSET_M, 0.00, 0.05],  # torso back
+        [0.05, 0.10 + OFFSET_M, -0.20],  # torso left, low
+        [0.00, 0.04, 0.43 + OFFSET_M],  # head top, left of centre (highest)
+        [0.00, -0.08 - OFFSET_M, 0.33],  # head right (lower)
+        [-0.15 - OFFSET_M, 0.06, 0.20],  # left shoulder, on the back face
+        [-0.15 - OFFSET_M, -0.06, 0.20],  # right shoulder, on the back face
+    ]
+)
+
+
+def Body_points(heading_deg: float, origin_in_body: np.ndarray) -> np.ndarray:
+    """Markers in a Vicon body frame where the upright link is at heading_deg and origin_in_body,
+    centred like Vicon Tracker does (origin at the marker centroid)."""
+    link_in_body_ = Rotation.from_euler("z", heading_deg, degrees=True).as_matrix()
+    points_ = LINK_MARKERS @ link_in_body_.T + origin_in_body
+    return points_ - points_.mean(axis=0)
+
+
+# Left/right pairs of the synthetic markers (left index, right index): head, back of the shoulders
+LATERAL_PAIRS: list[tuple[int, int]] = [(3, 4), (5, 6)]
+
+# Markers on the head: compared with the head mesh only
+HEAD_MARKERS: tuple[int, ...] = (3, 4)
+
+
+def Synthetic_surfaces() -> list[SampledMeshSurface]:
+    """Surface of each synthetic marker: the head for the head markers, the whole robot otherwise."""
     mesh_, head_ = Synthetic_robot()
-    offset_ = 0.010
-    # Marker positions in the link frame: on torso faces and on the head sides
-    link_points_ = np.array(
-        [
-            [0.15 + offset_, 0.05, -0.10],   # torso front
-            [0.15 + offset_, -0.06, 0.12],   # torso front
-            [-0.15 - offset_, 0.00, 0.05],   # torso back
-            [0.05, 0.10 + offset_, -0.20],   # torso left
-            [0.00, 0.08 + offset_, 0.38],    # head left (top marker)
-            [0.00, -0.08 - offset_, 0.36],   # head right (top marker)
-        ]
-    )
-    true_rotation_ = Rotation.from_euler("xyz", [0.0, 0.0, 70.0], degrees=True).as_matrix()
-    true_translation_ = np.array([0.02, -0.03, -0.05])
-    body_points_ = (link_points_ - true_translation_) @ true_rotation_   # inverse of p_link = R p_body + t
+    robot_surface_ = SampledMeshSurface.From_mesh(mesh_)
+    head_surface_ = SampledMeshSurface.From_mesh(head_)
+    return [head_surface_ if index_ in HEAD_MARKERS else robot_surface_ for index_ in range(len(LINK_MARKERS))]
 
-    top_ = Top_marker_indices(body_points_, 2)
-    estimate_ = Fit_mount(body_points_, mesh_, surface_offset_m=offset_, constrained_indices=top_, constraint_mesh=head_)
 
+def test_lateral_direction_from_left_right_pairs() -> None:
+    """Each pair points from its right to its left marker; skewed pairs show as disagreement."""
+    body_points_ = Body_points(0.0, np.zeros(3))
+    mean_deg_, directions_deg_, disagreement_deg_ = Lateral_direction_deg(body_points_, LATERAL_PAIRS)
+    # Link at heading 0: its left (y) axis is at +90 deg
+    assert mean_deg_ == pytest.approx(90.0, abs=1e-9)
+    assert directions_deg_ == pytest.approx([90.0, 90.0], abs=1e-9)
+    assert disagreement_deg_ == pytest.approx(0.0, abs=1e-9)
+
+    skewed_ = body_points_.copy()
+    skewed_[3, 0] += 0.05  # left head marker 5 cm forward
+    _, directions_deg_, disagreement_deg_ = Lateral_direction_deg(skewed_, LATERAL_PAIRS)
+    assert directions_deg_[0] < 90.0
+    assert disagreement_deg_ > 5.0
+
+
+def test_estimate_recovers_heading_and_position() -> None:
+    """Known upright mount: heading from the pairs, position from the surfaces."""
+    surfaces_ = Synthetic_surfaces()
+    heading_deg_ = -61.0
+    body_points_ = Body_points(heading_deg_, np.array([0.01, -0.02, 0.03]))
+
+    estimate_ = Estimate_upright_mount(body_points_, LATERAL_PAIRS, surfaces_, OFFSET_M)
+
+    assert estimate_.heading_deg == pytest.approx(heading_deg_, abs=0.5)
+    assert estimate_.pair_disagreement_deg == pytest.approx(0.0, abs=0.5)
     assert estimate_.rms_m < 0.002
-    fitted_ = body_points_ @ estimate_.rotation.T + estimate_.translation
-    # The top markers end up next to the head
-    _, head_distances_, _ = trimesh.proximity.closest_point(head_, fitted_[top_])
-    np.testing.assert_allclose(head_distances_, offset_, atol=0.003)
+    # The link frame maps the markers back onto their designed positions
+    link_points_ = body_points_ @ estimate_.rotation.T + estimate_.translation
+    np.testing.assert_allclose(link_points_, LINK_MARKERS, atol=0.004)
 
 
-def test_fit_mount_needs_three_markers() -> None:
-    """Two markers do not define a rigid fit."""
-    mesh_, _ = Synthetic_robot()
-    with pytest.raises(MountEstimateError, match="at least 3"):
-        Fit_mount(np.zeros((2, 3)), mesh_)
+def test_swapped_left_and_right_turn_the_robot_around() -> None:
+    """Left/right is a stated fact: swapping it gives the opposite heading (and a worse fit)."""
+    surfaces_ = Synthetic_surfaces()
+    body_points_ = Body_points(-61.0, np.zeros(3))
+    swapped_ = [(right_, left_) for left_, right_ in LATERAL_PAIRS]
+    estimate_ = Estimate_upright_mount(body_points_, swapped_, surfaces_, OFFSET_M)
+    assert estimate_.heading_deg == pytest.approx(119.0, abs=0.5)
+
+
+def test_estimate_needs_pairs_and_markers() -> None:
+    """No pair: no heading; fewer than 4 markers: no position."""
+    surfaces_ = Synthetic_surfaces()
+    body_points_ = Body_points(0.0, np.zeros(3))
+    with pytest.raises(MountEstimateError, match="at least one left/right marker pair"):
+        Estimate_upright_mount(body_points_, [], surfaces_, OFFSET_M)
+    with pytest.raises(MountEstimateError, match="at least 4 markers"):
+        Estimate_upright_mount(body_points_[:3], [(0, 1)], surfaces_[:3], OFFSET_M)

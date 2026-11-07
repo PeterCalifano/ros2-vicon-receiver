@@ -228,7 +228,8 @@ scripts/launch.sh                # checks that the Vicon server is reachable, th
                                  #   with config/vicon_client.yaml (-c FILE for another one)
 scripts/probe.sh -n 500          # records what the server sends (JSON in probe_output/, no ROS)
 scripts/fetch_g1_model.sh        # copies the G1 model for the viewer (ssh, see config/viewer.yaml)
-scripts/viz.sh                   # live viewer: open http://127.0.0.1:8080
+scripts/estimate_mount.py -r probe_output/<probe>.json --write   # marker mount on the G1 for the viewer
+scripts/start_visualizer.sh      # live viewer: open http://127.0.0.1:8080
 scripts/record.sh -t my_session  # records an MCAP session in recordings/ (Ctrl+C to stop; -o DIR)
 scripts/export.sh recordings/<session> --format csv,hdf5   # optional conversion
 tests/run_tests.sh               # all tests
@@ -266,6 +267,12 @@ The node has no built-in defaults: a missing parameter, a wrong type (e.g. `0` i
 | `enable_marker_ray_data` | bool | `true` | Cameras that saw each marker (needs marker data) |
 | `acquisition_stamp_window_frames` | int | `1000` | Window (frames) of the acquisition-time estimate |
 | `status_period_s` | double | `1.0` | Period of the console status line, `0.0` disables it |
+| `frame_queue_depth` | int | `100` | Depth of the `ViconFrame` publisher queue (frames kept for a slow subscriber) |
+| `live_stream_confirmation_frames` | int | `3` | Consecutive frame numbers, arriving at a plausible pace, before frames are published after connecting (>= 2) |
+| `clock_check_measurement_s` | double | `10.0` | Duration of one local-clock-rate measurement [s] |
+| `clock_check_block_s` | double | `1.0` | Blocks at both ends of a measurement whose least delayed frames are compared [s] (measurement > 2 blocks) |
+| `clock_rate_warning_limit` | double | `0.01` | Relative clock rate difference that triggers a warning (0.01 = 1 %) |
+| `connection_timeout_s` | int | `5` | Seconds without answer from the server (TCP keepalive) before the connection counts as lost; the node then stops with exit status 2 (no reconnection) |
 
 ### Published topics
 

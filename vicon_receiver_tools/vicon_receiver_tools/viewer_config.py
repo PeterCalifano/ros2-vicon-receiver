@@ -34,6 +34,7 @@ class ViewerSettings:
     port: int
     topic: str
     update_rate_hz: float
+    grid_size_m: float
     trail_length: int
     trail_update_rate_hz: float
     marker_radius_m: float
@@ -75,12 +76,27 @@ class PinholeCameraSettings:
 
 
 @dataclass(frozen=True)
+class LeftRightMarkerPairSettings:
+    """Two markers of the subject placed on the left and on the right of the robot (set-up specific)."""
+
+    left: str
+    right: str
+
+
+@dataclass(frozen=True)
 class MountEstimateSettings:
-    """Settings of the rough mount estimate."""
+    """Set-up facts used by the mount estimate (scripts/estimate_mount.py).
+
+    Attributes:
+        surface_offset_m: Distance of a marker centre from the mesh surface [m].
+        lateral_marker_pairs: Marker pairs placed left and right on the robot.
+        marker_links: Marker name -> link whose mesh the marker sits on; markers not listed sit on
+            the mount link or a link fixed to it.
+    """
 
     surface_offset_m: float
-    top_markers_link: str
-    top_markers_count: int
+    lateral_marker_pairs: list[LeftRightMarkerPairSettings]
+    marker_links: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -150,6 +166,9 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
         update_rate_hz=_Require_positive(
             _Require(viewer_section_, "update_rate_hz", float, "viewer"), "viewer.update_rate_hz"
         ),
+        grid_size_m=_Require_positive(
+            _Require(viewer_section_, "grid_size_m", float, "viewer"), "viewer.grid_size_m"
+        ),
         trail_length=int(
             _Require_positive(_Require(viewer_section_, "trail_length", int, "viewer"), "viewer.trail_length")
         ),
@@ -194,13 +213,26 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
         )
 
     estimate_section_ = _Require(document_, "mount_estimate", dict, str(path))
-    top_markers_count_ = _Require(estimate_section_, "top_markers_count", int, "mount_estimate")
-    if top_markers_count_ < 0:
-        raise ConfigError(f"mount_estimate.top_markers_count must be >= 0, got {top_markers_count_}")
+    surface_offset_m_ = _Require(estimate_section_, "surface_offset_m", float, "mount_estimate")
+    if surface_offset_m_ < 0.0:
+        raise ConfigError(f"mount_estimate.surface_offset_m must be >= 0, got {surface_offset_m_}")
+    pairs_: list[LeftRightMarkerPairSettings] = []
+    for index_, pair_section_ in enumerate(_Require(estimate_section_, "lateral_marker_pairs", list, "mount_estimate")):
+        where_ = f"mount_estimate.lateral_marker_pairs[{index_}]"
+        pair_ = LeftRightMarkerPairSettings(
+            left=_Require(pair_section_, "left", str, where_), right=_Require(pair_section_, "right", str, where_)
+        )
+        if pair_.left == pair_.right:
+            raise ConfigError(f"{where_}: left and right are the same marker '{pair_.left}'")
+        pairs_.append(pair_)
+    if not pairs_:
+        raise ConfigError("mount_estimate.lateral_marker_pairs needs at least one pair")
+    marker_links_ = _Require(estimate_section_, "marker_links", dict, "mount_estimate")
+    for marker_, link_ in marker_links_.items():
+        if not isinstance(marker_, str) or not isinstance(link_, str):
+            raise ConfigError(f"mount_estimate.marker_links: '{marker_}: {link_}' must map a marker name to a link name")
     mount_estimate_ = MountEstimateSettings(
-        surface_offset_m=_Require(estimate_section_, "surface_offset_m", float, "mount_estimate"),
-        top_markers_link=_Require(estimate_section_, "top_markers_link", str, "mount_estimate"),
-        top_markers_count=top_markers_count_,
+        surface_offset_m=surface_offset_m_, lateral_marker_pairs=pairs_, marker_links=dict(marker_links_)
     )
 
     return ViewerConfig(

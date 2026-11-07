@@ -301,7 +301,7 @@ main()
     setup_tools_env
 
     info "Build complete."
-    info "Next: scripts/launch.sh [-c config/vicon_client.yaml]; viewer: scripts/viz.sh"
+    info "Next: scripts/launch.sh [-c config/vicon_client.yaml]; viewer: scripts/start_visualizer.sh"
 }
 
 main "$@"

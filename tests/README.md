@@ -38,10 +38,11 @@ tests/
     fake_bin/ip                 fake 'ip' (addresses, routes) driven by FAKE_IP_* variables
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
     fake_vicon_frames.py        synthetic ViconFrame publisher named vicon_client (record/export)
+    replay_probe.py             replays a probe recording as ViconFrame (viewer checks without a Tracker)
   unit/
     cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node (incl. invalid values)
     cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames, leftover frames, local clock rate
-    cpp/test_utilities.cpp             GoogleTest: running statistics, SDK names
+    cpp/test_utilities.cpp             GoogleTest: running statistics, SDK names, TCP keepalive
     cpp/test_ros_conversions.cpp       GoogleTest: Vicon names -> ROS names, SDK results -> messages, TF, times
     cpp/test_console_status_line.cpp       GoogleTest: console telemetry line
     cpp/test_vicon_receiver_node_publishers.cpp  GoogleTest: publisher creation with Vicon names
@@ -53,7 +54,7 @@ tests/
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
     test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs
-    test_tools_mount.py                robot model access and mount fit (synthetic robot; needs the conda environment)
+    test_tools_mount.py                robot model access and mount estimate (head/shoulder pairs, synthetic robot; needs the conda environment)
     test_tools_export.py               export to CSV without ROS (fake reader), partial-output cleanup
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)

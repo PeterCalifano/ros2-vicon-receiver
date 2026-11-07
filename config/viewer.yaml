@@ -1,5 +1,5 @@
 # =============================================================================
-# viewer.yaml - Live viewer (scripts/viz.sh) and the G1 model it shows.
+# viewer.yaml - Live viewer (scripts/start_visualizer.sh) and the G1 model it shows.
 #
 # The viewer subscribes to the ViconFrame topic of the vicon_client node and
 # shows it in a browser (viser): subject axes, trail, markers coloured by the
@@ -18,6 +18,10 @@ viewer:
 
   # Scene updates per second sent to the browser (frames arrive at 100 Hz).
   update_rate_hz: 30.0
+
+  # Side of the floor grid around the Vicon origin [m]: large enough for the
+  # tracking volume (the G1 was recorded about 10 m from the origin).
+  grid_size_m: 24.0
 
   # Number of past positions drawn as a trail behind each subject (sampled at
   # update_rate_hz: 300 = 10 s at 30 Hz), and how often the trail is redrawn
@@ -47,7 +51,7 @@ robot:
   mount_link: "torso_link"
 
   # Pose of mount_link in the Vicon body frame (written by
-  # scripts/estimate_mount.sh and by the "save mount" button of the viewer).
+  # scripts/estimate_mount.py and by the "save mount" button of the viewer).
   mount_file: "config/g1_mount.yaml"
 
 # Cameras drawn as frustums, at their optical frames of the G1 URDF (OpenCV
@@ -74,12 +78,24 @@ cameras:
 # Length of the frustums drawn in the scene [m].
 frustum_scale_m: 0.15
 
-# Rough estimate of the mount (scripts/estimate_mount.sh): markers fitted to the
-# meshes of mount_link and the links fixed to it.
+# Estimate of the mount (scripts/estimate_mount.py). The method is generic: link
+# upright (the robot stood upright when the Vicon object was created), heading from
+# marker pairs placed left and right on the robot, position fitted to the meshes.
+# The facts below are specific to this set-up (the markers on our G1).
 mount_estimate:
   # Distance of a marker centre from the mesh surface [m] (7 mm marker + base).
   surface_offset_m: 0.010
-  # The highest markers (along the body z axis) lie on this link: the two top
-  # markers were mounted on the head, roughly on its lateral sides.
-  top_markers_link: "head_link"
-  top_markers_count: 2
+  # Marker pairs placed left and right on the robot: the horizontal direction from
+  # the right to the left marker is the link's y axis. Our G1: one pair on the
+  # head, one on the back of the shoulders (same height). Left/right from the
+  # shoulder markers being on the back.
+  lateral_marker_pairs:
+    - left: "g1-unitree-torso-cam6"
+      right: "g1-unitree-torso-cam7"
+    - left: "g1-unitree-torso-cam4"
+      right: "g1-unitree-torso-cam3"
+  # Markers sitting on another link than mount_link and the links fixed to it
+  # (compared with that link's mesh only).
+  marker_links:
+    g1-unitree-torso-cam6: "head_link"
+    g1-unitree-torso-cam7: "head_link"

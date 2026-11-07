@@ -1,14 +1,16 @@
-# Pose of the G1 link 'torso_link' in the Vicon body frame of subject 'g1-unitree-torso-cam'.
-# ESTIMATED by vicon_receiver_tools.mount_estimate (markers fitted to the G1 meshes),
-# not measured: RMS fit error 5.9 mm, recording build/diag/compare_ServerPush.json.
-# Adjust it in the viewer (scripts/viz.sh) and save from there if needed.
+# Pose of the robot link 'torso_link' in the Vicon body frame of subject 'g1-unitree-torso-cam'.
+# ESTIMATED by scripts/estimate_mount.py, not measured: link upright (robot standing when
+# the Vicon object was created), heading from the left/right marker pairs of the viewer
+# config (they agree within 0.3 deg), position fitted to the meshes
+# (RMS 17.5 mm, std x/y/z 13, 19, 17 mm). Recording: probe_output/vicon_probe_20261030T120535Z.json.
+# Adjust it in the viewer (scripts/start_visualizer.sh) and save from there if needed.
 link: torso_link
 subject: g1-unitree-torso-cam
 xyz_m:
-- -0.02939
-- -0.0266
-- -0.23081
+- 0.00061
+- -0.01005
+- -0.25955
 rpy_rad:
-- 0.06198
-- 0.24192
-- 0.9971
+- 0.0
+- 0.0
+- -1.06051

@@ -38,6 +38,12 @@ def test_repository_config_has_all_node_parameters() -> None:
         "enable_marker_ray_data",
         "acquisition_stamp_window_frames",
         "status_period_s",
+        "frame_queue_depth",
+        "live_stream_confirmation_frames",
+        "clock_check_measurement_s",
+        "clock_check_block_s",
+        "clock_rate_warning_limit",
+        "connection_timeout_s",
     }
     assert set(parameters_) == expected_names_
 

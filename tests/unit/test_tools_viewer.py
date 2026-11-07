@@ -15,8 +15,10 @@ import pytest
 from conftest import REPO_ROOT
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
+    CAMERA_OFFSET_M,
     COLOR_FEW,
     COLOR_GOOD,
+    Camera_position,
     LatestFrameBuffer,
     ViewerFrame,
     ViewerMarker,
@@ -95,6 +97,15 @@ def test_zero_quaternion_without_flags_counts_as_occluded() -> None:
 # -------------------------------------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------------------------------------
+def test_camera_looks_at_the_robot_from_its_front_left() -> None:
+    """The camera offset turns with the robot heading (x forward, y left)."""
+    robot_ = np.array([8.5, 6.3, 0.9])
+    np.testing.assert_allclose(Camera_position(robot_, 0.0), robot_ + np.asarray(CAMERA_OFFSET_M))
+    # Robot facing +y: its front-left is at -x, +y
+    offset_ = Camera_position(robot_, np.pi / 2) - robot_
+    np.testing.assert_allclose(offset_, [-CAMERA_OFFSET_M[1], CAMERA_OFFSET_M[0], CAMERA_OFFSET_M[2]], atol=1e-12)
+
+
 def test_marker_colors_by_camera_count() -> None:
     """Green with enough cameras, yellow with fewer (occluded markers are not drawn)."""
     markers_ = [
@@ -203,12 +214,12 @@ def test_viewer_config_rejects_non_positive_rate(tmp_path: Path) -> None:
         Load_viewer_config(config_)
 
 
-def test_viewer_config_rejects_negative_top_marker_count(tmp_path: Path) -> None:
-    """The number of markers constrained to the top link cannot be negative (0: no constraint)."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("top_markers_count: 2", "top_markers_count: -1")
+def test_viewer_config_rejects_negative_surface_offset(tmp_path: Path) -> None:
+    """Markers cannot sit below the surface of the meshes."""
+    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("surface_offset_m: 0.010", "surface_offset_m: -0.01")
     config_ = tmp_path / "viewer.yaml"
     config_.write_text(text_, encoding="utf-8")
-    with pytest.raises(ConfigError, match=r"top_markers_count must be >= 0"):
+    with pytest.raises(ConfigError, match=r"surface_offset_m must be >= 0"):
         Load_viewer_config(config_)
 
 
@@ -258,3 +269,23 @@ def test_frame_buffer_needs_a_deserializer_for_serialized_data() -> None:
     buffer_.put_serialized(b"data")
     with pytest.raises(ValueError, match="without deserialize"):
         buffer_.latest()
+
+
+def test_viewer_config_has_the_set_up_marker_pairs() -> None:
+    """The set-up facts of the mount estimate are configuration, read by name."""
+    settings_ = Load_viewer_config(VIEWER_CONFIG).mount_estimate
+    assert len(settings_.lateral_marker_pairs) >= 1
+    for pair_ in settings_.lateral_marker_pairs:
+        assert pair_.left and pair_.right and pair_.left != pair_.right
+    assert all(isinstance(link_, str) for link_ in settings_.marker_links.values())
+
+
+def test_viewer_config_rejects_a_pair_of_one_marker(tmp_path: Path) -> None:
+    """Left and right must be two different markers."""
+    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
+        'right: "g1-unitree-torso-cam7"', 'right: "g1-unitree-torso-cam6"'
+    )
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text(text_, encoding="utf-8")
+    with pytest.raises(ConfigError, match="left and right are the same marker"):
+        Load_viewer_config(config_)

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# viz.sh - Live viewer of the Vicon stream in a web browser (viser).
+# start_visualizer.sh - Live viewer of the Vicon stream in a web browser (viser).
 #
 # Shows the ViconFrame topic of a running vicon_client node (scripts/launch.sh):
 # subjects, trails, markers coloured by camera count, occlusion, the G1 model
 # and its camera frustums, telemetry, and sliders to adjust the marker mount.
 #
 # Usage:
-#   scripts/viz.sh [-c FILE]
+#   scripts/start_visualizer.sh [-c FILE]
 # Then open the printed address (default http://127.0.0.1:8080) in a browser.
 # =============================================================================
 

@@ -33,6 +33,7 @@
 
 #include "vicon_receiver/frame_timing.hpp"
 #include "vicon_receiver/console_status_line.hpp"
+#include "vicon_receiver/utilities.hpp"
 #include "vicon_receiver_msgs/msg/vicon_frame.hpp"
 
 using namespace std;
@@ -87,13 +88,18 @@ class ViconReceiverNode : public rclcpp::Node
     bool enable_marker_ray_data;
     /// Period of the console status line [s]; 0 disables it
     double status_period_s;
+    /// Depth of the ViconFrame publisher queue (frames kept for a slow subscriber)
+    std::size_t frame_queue_depth;
+    /// Duration of one local-clock-rate measurement [s]
+    double clock_check_measurement_s;
+    /// Relative clock rate error that triggers a warning (0.01 = 1 %)
+    double clock_rate_warning_limit;
+    /// Seconds without answer from the server before the connection counts as lost
+    int connection_timeout_s;
 
     // --- Frame processing state ---
-    /// Consecutive frame numbers that confirm the live stream after connecting: more than the
-    /// leftovers of the server's previous session seen back to back (up to 2)
-    static constexpr std::uint64_t kLiveStreamConsecutiveFrames = 3;
     /// Holds back the frames left over from the server's previous session after connecting
-    vicon_receiver::StartupLeftoverFrameFilter leftover_frame_filter{kLiveStreamConsecutiveFrames};
+    std::unique_ptr<vicon_receiver::StartupLeftoverFrameFilter> leftover_frame_filter;
     /// Estimated camera acquisition time of each frame
     std::unique_ptr<vicon_receiver::AcquisitionClock> acquisition_clock;
     /// Local clock rate compared with the Vicon frame clock
@@ -121,6 +127,12 @@ class ViconReceiverNode : public rclcpp::Node
 
     /// Forget everything about the previous frame timeline (called after each connection).
     void reset_stream_state();
+
+    /**
+     * @brief Make a dead connection fail after connection_timeout_s (TCP keepalive on the SDK
+     *        socket), so that GetFrame reports NotConnected instead of waiting forever.
+     */
+    void watch_connection();
 
     /**
      * @brief Whether the current frame belongs to the live stream (see StartupLeftoverFrameFilter).
@@ -198,9 +210,12 @@ class ViconReceiverNode : public rclcpp::Node
      * Waits for the next frame (ServerPush) or requests it (ClientPull), publishes one
      * ViconFrame with every subject (occlusion mask included), the valid segment poses on
      * PoseStamped and TF (stamped with the estimated acquisition time), and updates the console
-     * telemetry. Reconnects if the connection was lost.
+     * telemetry.
+     *
+     * @return false if the connection to the server is lost (no reconnection: the caller stops),
+     *         true otherwise (frame published, or no frame available yet).
      */
-    void get_frame();
+    bool get_frame();
 
     // functions to create a segment publisher in a new thread
     void create_publisher(const string subject_name, const string segment_name);

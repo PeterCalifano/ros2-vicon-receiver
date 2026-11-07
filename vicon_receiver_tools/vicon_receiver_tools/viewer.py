@@ -11,7 +11,7 @@ Subscribes to the ViconFrame topic of the vicon_client node and shows, in the Vi
 - sliders to adjust the mount, and a button to save it to the mount file.
 
 Rendering runs in the browser, so the machine running the node only sends small updates
-(update_rate_hz of the viewer config). Start it with scripts/viz.sh.
+(update_rate_hz of the viewer config). Start it with scripts/start_visualizer.sh.
 
 Needs viser, yourdfpy and trimesh (in the conda environment of environment.yml) and the
 ROS 2 environment of the workspace (vicon_receiver_msgs, rclpy).
@@ -47,6 +47,16 @@ COLOR_FEW: tuple[int, int, int] = (235, 180, 30)
 
 # Colour of the trails
 COLOR_TRAIL: tuple[int, int, int] = (60, 120, 230)
+
+# Where a browser camera is put to look at the robot, in the robot's heading frame (x forward,
+# y left, z up) [m]: front-left, so that the camera frustums show which way they point
+CAMERA_OFFSET_M: tuple[float, float, float] = (1.6, 1.6, 0.8)
+
+# Line width of the camera frustums [pixels]
+FRUSTUM_LINE_WIDTH_PX: float = 2.0
+
+# Colours of the camera frustums, in the order of the cameras in the config (cycled)
+FRUSTUM_COLORS: tuple[tuple[int, int, int], ...] = ((30, 90, 220), (230, 130, 20), (40, 160, 70))
 
 # Period of the telemetry panel updates [s] (text does not need the scene rate)
 TELEMETRY_PERIOD_S: float = 0.5
@@ -183,6 +193,14 @@ def Matrix_to_wxyz_position(transform: np.ndarray) -> tuple[np.ndarray, np.ndarr
     return np.array([xyzw_[3], xyzw_[0], xyzw_[1], xyzw_[2]]), transform[:3, 3].copy()
 
 
+def Camera_position(robot_position: np.ndarray, heading_rad: float) -> np.ndarray:
+    """Where a browser camera looks at the robot from: CAMERA_OFFSET_M turned by the robot heading."""
+    cos_, sin_ = np.cos(heading_rad), np.sin(heading_rad)
+    offset_x_, offset_y_, offset_z_ = CAMERA_OFFSET_M
+    offset_ = np.array([cos_ * offset_x_ - sin_ * offset_y_, sin_ * offset_x_ + cos_ * offset_y_, offset_z_])
+    return np.asarray(robot_position, dtype=float) + offset_
+
+
 def Trail_segments(points: np.ndarray) -> np.ndarray:
     """Line segments (N-1 x 2 x 3) joining consecutive trail points (N x 3)."""
     if len(points) < 2:
@@ -313,7 +331,8 @@ class ViserLiveViewer:
         self._last_telemetry_s = 0.0
         self._last_trail_s = 0.0
 
-        server.scene.add_grid("/grid", width=10.0, height=10.0, cell_size=0.5, section_size=1.0)
+        grid_size_ = config.viewer.grid_size_m
+        server.scene.add_grid("/grid", width=grid_size_, height=grid_size_, cell_size=0.5, section_size=1.0)
         server.scene.add_frame("/vicon", axes_length=0.3, axes_radius=0.01)
 
         mount_path_ = repo_root / config.robot.mount_file
@@ -322,10 +341,15 @@ class ViserLiveViewer:
         self._mount_note = (
             f"mount from {config.robot.mount_file}"
             if loaded_mount_ is not None
-            else f"no {config.robot.mount_file}: identity mount (run scripts/estimate_mount.sh)"
+            else f"no {config.robot.mount_file}: identity mount (run scripts/estimate_mount.py)"
         )
 
         self._robot_frame: Any = None
+        # Last robot position: browser cameras are pointed at it (the robot may be far from the
+        # Vicon origin, where a browser camera starts)
+        self._robot_position: np.ndarray | None = None
+        self._robot_heading_rad = 0.0
+        server.on_client_connect(self._point_camera_at_robot)
         self._camera_handles: dict[str, Any] = {}
         self._root_in_mount = np.eye(4)
         self._cameras_in_mount: dict[str, np.ndarray] = {}
@@ -351,17 +375,29 @@ class ViserLiveViewer:
             return f"robot model not shown: {error_}"
 
         # The URDF nodes hang below /robot, whose pose is set at every update
-        self._robot_frame = self._server.scene.add_frame("/robot", show_axes=False, visible=False)
-        ViserUrdf(self._server, urdf_, root_node_name="/robot")
+        self._robot_frame = self._server.scene.add_frame("/robot", show_axes=False)
+        viser_urdf_ = ViserUrdf(self._server, urdf_, root_node_name="/robot")
+        # ViserUrdf creates the link frames at identity and places them only in update_cfg():
+        # without this call every link is drawn at the root. Zero joint angles = the
+        # configuration used for the mount and the camera poses above.
+        viser_urdf_.update_cfg(np.zeros(len(viser_urdf_.get_actuated_joint_names())))
 
-        for camera_ in self._config.cameras:
+        for index_, camera_ in enumerate(self._config.cameras):
             self._camera_handles[camera_.name] = self._server.scene.add_camera_frustum(
                 f"/cameras/{camera_.name}",
                 fov=camera_.vertical_fov_rad(),
                 aspect=camera_.aspect(),
                 scale=self._config.frustum_scale_m,
-                visible=False,
+                color=FRUSTUM_COLORS[index_ % len(FRUSTUM_COLORS)],
+                # viser's default is 2 cm thick bars in world units: hides the robot
+                thickness=FRUSTUM_LINE_WIDTH_PX,
+                thickness_units="screen",
             )
+
+        # Nothing is shown before the first valid pose of the subject
+        self._robot_frame.visible = False
+        for handle_ in self._camera_handles.values():
+            handle_.visible = False
         return f"robot model {robot_.urdf} attached to {robot_.subject} at {robot_.mount_link}"
 
     def _build_gui(self) -> None:
@@ -403,7 +439,7 @@ class ViserLiveViewer:
             self._mount,
             self._config.robot.mount_link,
             self._config.robot.subject,
-            "Adjusted in the live viewer (scripts/viz.sh).",
+            "Adjusted in the live viewer (scripts/start_visualizer.sh).",
         )
         print(f"[viewer] mount saved to {path_}")
 
@@ -466,6 +502,14 @@ class ViserLiveViewer:
             point_shape="circle",
         )
 
+    def _point_camera_at_robot(self, client: Any) -> None:
+        """Point a browser camera at the robot (once it has been seen), from CAMERA_OFFSET_M."""
+        if self._robot_position is None:
+            return
+        client.camera.position = Camera_position(self._robot_position, self._robot_heading_rad)
+        client.camera.look_at = self._robot_position
+        client.camera.up_direction = (0.0, 0.0, 1.0)
+
     def _update_robot(self, subject: ViewerSubject) -> None:
         """Place the robot model and the frustums at the pose of the subject."""
         if self._robot_frame is None or not subject.segments:
@@ -482,6 +526,12 @@ class ViserLiveViewer:
         wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._root_in_mount)
         self._robot_frame.wxyz = wxyz_
         self._robot_frame.position = position_
+        first_pose_ = self._robot_position is None
+        self._robot_position = np.asarray(position_, dtype=float)
+        self._robot_heading_rad = float(np.arctan2(mount_in_world_[1, 0], mount_in_world_[0, 0]))
+        if first_pose_:
+            for client_ in self._server.get_clients().values():
+                self._point_camera_at_robot(client_)
         for name_, handle_ in self._camera_handles.items():
             wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._cameras_in_mount[name_])
             handle_.wxyz = wxyz_

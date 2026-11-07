@@ -65,14 +65,23 @@ int main(int argc, char **argv)
     // Connect to the Vicon server
     node->connect();
 
-    // Continuously retrieve frames while ROS 2 is running
+    // Continuously retrieve frames while ROS 2 is running; a lost connection stops the node
+    // (exit status 2), e.g. for a supervisor to restart it
+    int exit_status = 0;
     while (rclcpp::ok())
     {
-        node->get_frame();
+        if (!node->get_frame())
+        {
+            RCLCPP_FATAL(node->get_logger(),
+                         "Connection to the Vicon server lost (no answer for the connection "
+                         "timeout, or closed by the server): stopping");
+            exit_status = 2;
+            break;
+        }
     }
 
     // Disconnect from the Vicon server and shut down ROS 2
     node->disconnect();
     rclcpp::shutdown();
-    return 0;
+    return exit_status;
 }

@@ -487,6 +487,19 @@ namespace startup_leftover_frame_filter_tests
         EXPECT_FALSE(filter.accept(103, 5.01, kFilterRateHz));
         EXPECT_TRUE(filter.accept(104, 5.02, kFilterRateHz));
     }
+
+    TEST(StartupLeftoverFrameFilter, ThreeConsecutiveLeftoversBackToBackAreNotLive)
+    {
+        // Live case (2026-10-30, reconnecting to a Tracker that was not streaming): 2175488, then
+        // 2175495, 2175496, 2175497 within 1.7 ms. Three consecutive numbers, but far too fast for
+        // live frames at 100 Hz (20 ms): nothing is accepted.
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(2175488, 0.0, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(2175495, 0.00016, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(2175496, 0.00157, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(2175497, 0.00171, kFilterRateHz));
+        EXPECT_FALSE(filter.confirmed());
+    }
 } // namespace startup_leftover_frame_filter_tests
 
 // =================================================================================================

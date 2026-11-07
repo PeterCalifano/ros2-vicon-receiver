@@ -8,9 +8,19 @@
 
 #include "vicon_receiver/utilities.hpp"
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <algorithm>
+#include <cerrno>
+#include <climits>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
+#include <system_error>
 
 namespace vicon_receiver
 {
@@ -22,6 +32,21 @@ namespace vicon_receiver
         std::string unknown_value_name(int value)
         {
             return "Unknown(" + std::to_string(value) + ")";
+        }
+
+        /// State of an established connection in /proc/net/tcp (hexadecimal).
+        constexpr const char *kEstablishedState = "01";
+
+        /// Seconds without data before the first probe, and between probes.
+        constexpr int kKeepaliveIntervalS = 1;
+
+        /// Set one integer socket option, or throw with its name.
+        void set_option(int socket_fd, int level, int option, int value, const char *name)
+        {
+            if (setsockopt(socket_fd, level, option, &value, sizeof(value)) != 0)
+            {
+                throw std::system_error(errno, std::generic_category(), name);
+            }
         }
     } // namespace
 
@@ -230,5 +255,131 @@ namespace vicon_receiver
         }
         throw std::invalid_argument("unknown stream mode '" + name +
                                     "' (valid: ServerPush, ClientPull, ClientPullPreFetch)");
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // TCP keepalive of the SDK connection
+    // --------------------------------------------------------------------------------------------
+
+    std::uint16_t server_port(const std::string &host_and_port)
+    {
+        // An IPv6 address has several ':'; only "host:port" with one ':' carries a port
+        const std::size_t colon = host_and_port.rfind(':');
+        if (colon == std::string::npos || host_and_port.find(':') != colon)
+        {
+            return kDefaultDataStreamPort;
+        }
+
+        const std::string port_text = host_and_port.substr(colon + 1);
+        std::size_t parsed = 0;
+        unsigned long port = 0;
+        try
+        {
+            port = std::stoul(port_text, &parsed);
+        }
+        catch (const std::exception &)
+        {
+            parsed = 0;
+        }
+        if (port_text.empty() || parsed != port_text.size() || port < 1 || port > 65535)
+        {
+            throw std::invalid_argument("invalid port '" + port_text + "' in '" + host_and_port +
+                                        "'");
+        }
+        return static_cast<std::uint16_t>(port);
+    }
+
+    std::set<std::uint64_t> established_socket_inodes(std::istream &table,
+                                                      std::uint16_t remote_port)
+    {
+        std::set<std::uint64_t> inodes;
+        std::string line;
+        std::getline(table, line); // header
+
+        while (std::getline(table, line))
+        {
+            // sl local_address rem_address st tx:rx tr:when retrnsmt uid timeout inode ...
+            std::istringstream fields(line);
+            std::string slot;
+            std::string local_address;
+            std::string remote_address;
+            std::string state;
+            std::string queues;
+            std::string timer;
+            std::string retransmits;
+            std::string uid;
+            std::string timeout;
+            std::uint64_t inode = 0;
+            if (!(fields >> slot >> local_address >> remote_address >> state >> queues >> timer >>
+                  retransmits >> uid >> timeout >> inode))
+            {
+                continue;
+            }
+
+            const std::size_t colon = remote_address.rfind(':');
+            if (colon == std::string::npos || state != kEstablishedState || inode == 0)
+            {
+                continue;
+            }
+            const unsigned long port = std::stoul(remote_address.substr(colon + 1), nullptr, 16);
+            if (port == remote_port)
+            {
+                inodes.insert(inode);
+            }
+        }
+        return inodes;
+    }
+
+    std::vector<int> find_tcp_sockets_to_port(std::uint16_t remote_port)
+    {
+        std::set<std::uint64_t> inodes;
+        for (const char *table_path : {"/proc/net/tcp", "/proc/net/tcp6"})
+        {
+            std::ifstream table(table_path);
+            if (table)
+            {
+                const std::set<std::uint64_t> found = established_socket_inodes(table, remote_port);
+                inodes.insert(found.begin(), found.end());
+            }
+        }
+
+        // Every open file descriptor of this process that is one of those sockets
+        std::vector<int> sockets;
+        std::error_code error;
+        for (const auto &entry : std::filesystem::directory_iterator("/proc/self/fd", error))
+        {
+            std::error_code link_error;
+            const std::string target = std::filesystem::read_symlink(entry.path(), link_error);
+            const std::string prefix = "socket:[";
+            if (link_error || target.rfind(prefix, 0) != 0 || target.back() != ']')
+            {
+                continue;
+            }
+            const std::uint64_t inode =
+                std::stoull(target.substr(prefix.size(), target.size() - prefix.size() - 1));
+            if (inodes.count(inode) > 0)
+            {
+                sockets.push_back(std::stoi(entry.path().filename().string()));
+            }
+        }
+        return sockets;
+    }
+
+    void enable_tcp_keepalive(int socket_fd, int timeout_s)
+    {
+        if (timeout_s < 2)
+        {
+            throw std::invalid_argument("TCP keepalive timeout must be >= 2 s, got " +
+                                        std::to_string(timeout_s));
+        }
+
+        // First probe after 1 s without data, then one per second; the connection fails when
+        // timeout_s - 1 probes in a row got no answer
+        set_option(socket_fd, SOL_SOCKET, SO_KEEPALIVE, 1, "SO_KEEPALIVE");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, kKeepaliveIntervalS, "TCP_KEEPIDLE");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, kKeepaliveIntervalS, "TCP_KEEPINTVL");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, timeout_s - 1, "TCP_KEEPCNT");
+        // Also bound the time sent data may stay unacknowledged (requests to the server)
+        set_option(socket_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, timeout_s * 1000, "TCP_USER_TIMEOUT");
     }
 } // namespace vicon_receiver

@@ -52,6 +52,12 @@ namespace
         parameters.emplace_back("enable_marker_ray_data", true);
         parameters.emplace_back("acquisition_stamp_window_frames", 1000);
         parameters.emplace_back("status_period_s", 1.0);
+        parameters.emplace_back("frame_queue_depth", 100);
+        parameters.emplace_back("live_stream_confirmation_frames", 3);
+        parameters.emplace_back("clock_check_measurement_s", 10.0);
+        parameters.emplace_back("clock_check_block_s", 1.0);
+        parameters.emplace_back("clock_rate_warning_limit", 0.01);
+        parameters.emplace_back("connection_timeout_s", 5);
         return parameters;
     }
 
@@ -186,7 +192,13 @@ INSTANTIATE_TEST_SUITE_P(EveryParameter,
                                            "enable_marker_data",
                                            "enable_marker_ray_data",
                                            "acquisition_stamp_window_frames",
-                                           "status_period_s"));
+                                           "status_period_s",
+                                           "frame_queue_depth",
+                                           "live_stream_confirmation_frames",
+                                           "clock_check_measurement_s",
+                                           "clock_check_block_s",
+                                           "clock_rate_warning_limit",
+                                           "connection_timeout_s"));
 
 // -------------------------------------------------------------------------------------------------
 // Invalid values of the streaming, stamping and telemetry parameters
@@ -226,22 +238,40 @@ TEST_P(InvalidValueTest, InvalidValueIsRejectedWithMessage)
 INSTANTIATE_TEST_SUITE_P(
     FrameParameters,
     InvalidValueTest,
-    ::testing::Values(InvalidValueCase{"unknown_stream_mode",
-                                       rclcpp::Parameter("stream_mode", "Push"),
-                                       "unknown stream mode 'Push'"},
-                      InvalidValueCase{"lowercase_stream_mode",
-                                       rclcpp::Parameter("stream_mode", "serverpush"),
-                                       "valid: ServerPush, ClientPull, ClientPullPreFetch"},
-                      InvalidValueCase{"empty_window",
-                                       rclcpp::Parameter("acquisition_stamp_window_frames", 0),
-                                       "'acquisition_stamp_window_frames' must be >= 1"},
-                      InvalidValueCase{"negative_status_period",
-                                       rclcpp::Parameter("status_period_s", -1.0),
-                                       "'status_period_s' must be >= 0"},
-                      InvalidValueCase{
-                          "rays_without_markers",
-                          rclcpp::Parameter("enable_marker_data", false),
-                          "'enable_marker_ray_data' is true but 'enable_marker_data' is false"}),
+    ::testing::Values(
+        InvalidValueCase{"unknown_stream_mode",
+                         rclcpp::Parameter("stream_mode", "Push"),
+                         "unknown stream mode 'Push'"},
+        InvalidValueCase{"lowercase_stream_mode",
+                         rclcpp::Parameter("stream_mode", "serverpush"),
+                         "valid: ServerPush, ClientPull, ClientPullPreFetch"},
+        InvalidValueCase{"empty_window",
+                         rclcpp::Parameter("acquisition_stamp_window_frames", 0),
+                         "'acquisition_stamp_window_frames' must be >= 1"},
+        InvalidValueCase{"negative_status_period",
+                         rclcpp::Parameter("status_period_s", -1.0),
+                         "'status_period_s' must be >= 0"},
+        InvalidValueCase{"empty_queue",
+                         rclcpp::Parameter("frame_queue_depth", 0),
+                         "'frame_queue_depth' must be >= 1"},
+        InvalidValueCase{"single_confirmation_frame",
+                         rclcpp::Parameter("live_stream_confirmation_frames", 1),
+                         "'live_stream_confirmation_frames' must be >= 2"},
+        InvalidValueCase{"zero_clock_block",
+                         rclcpp::Parameter("clock_check_block_s", 0.0),
+                         "'clock_check_block_s' must be > 0"},
+        InvalidValueCase{"short_clock_measurement",
+                         rclcpp::Parameter("clock_check_measurement_s", 2.0),
+                         "'clock_check_measurement_s' must be > 2 x clock_check_block_s"},
+        InvalidValueCase{"short_connection_timeout",
+                         rclcpp::Parameter("connection_timeout_s", 1),
+                         "'connection_timeout_s' must be in 2..3600"},
+        InvalidValueCase{"zero_warning_limit",
+                         rclcpp::Parameter("clock_rate_warning_limit", 0.0),
+                         "'clock_rate_warning_limit' must be > 0"},
+        InvalidValueCase{"rays_without_markers",
+                         rclcpp::Parameter("enable_marker_data", false),
+                         "'enable_marker_ray_data' is true but 'enable_marker_data' is false"}),
     [](const ::testing::TestParamInfo<InvalidValueCase> &info) { return info.param.name; });
 
 TEST(ViconReceiverNodeParams, EveryStreamModeIsAccepted)
