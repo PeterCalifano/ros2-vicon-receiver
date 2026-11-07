@@ -94,8 +94,12 @@ def Link_pose(urdf: yourdfpy.URDF, link: str, reference: str) -> np.ndarray:
     try:
         return np.asarray(urdf.get_transform(frame_to=link, frame_from=reference))
     except ValueError:
-        # The scene graph only has parent -> child edges: invert the opposite query
+        pass
+    # The scene graph only has parent -> child edges: invert the opposite query
+    try:
         return np.linalg.inv(np.asarray(urdf.get_transform(frame_to=reference, frame_from=link)))
+    except ValueError as error_:
+        raise RobotModelError(f"no transform between '{link}' and '{reference}': {error_}") from error_
 
 
 def Rigid_subtree(urdf: yourdfpy.URDF, link: str) -> list[str]:

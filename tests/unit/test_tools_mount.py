@@ -7,6 +7,7 @@ The fit is checked on a synthetic "robot" (a torso box and a head box) with a kn
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -77,6 +78,22 @@ def test_links_and_poses_of_a_urdf(tmp_path: Path) -> None:
     np.testing.assert_allclose(Link_pose(urdf_, "base", "torso")[:3, 3], [0.0, 0.0, -1.0])
     with pytest.raises(RobotModelError, match="not in the URDF"):
         Link_pose(urdf_, "arm", "torso")
+    # Siblings (two fixed children of the torso)
+    np.testing.assert_allclose(Link_pose(urdf_, "head", "camera")[:3, 3], [-0.1, 0.0, 0.2])
+
+
+def test_unconnected_links_raise_a_model_error() -> None:
+    """No transform in either direction: RobotModelError (handled by the viewer), not ValueError."""
+
+    def _No_transform(frame_to: str, frame_from: str) -> None:
+        raise ValueError(f"no path from {frame_from} to {frame_to}")
+
+    urdf_ = SimpleNamespace(
+        robot=SimpleNamespace(links=[SimpleNamespace(name="a"), SimpleNamespace(name="b")]),
+        get_transform=_No_transform,
+    )
+    with pytest.raises(RobotModelError, match="no transform between 'a' and 'b'"):
+        Link_pose(urdf_, "a", "b")  # type: ignore[arg-type]
 
 
 def test_missing_urdf_is_reported(tmp_path: Path) -> None:
@@ -89,7 +106,7 @@ def test_missing_urdf_is_reported(tmp_path: Path) -> None:
 # Marker constellation from a probe recording
 # -------------------------------------------------------------------------------------------------
 def test_marker_constellation_in_body_frame() -> None:
-    """Markers are expressed in the body frame; occluded samples are skipped."""
+    """Markers are expressed in the body frame; occluded samples and invalid rotations are skipped."""
     rotation_ = Rotation.from_euler("z", 90, degrees=True)
     body_points_ = {"m1": np.array([0.1, 0.0, 0.0]), "m2": np.array([0.0, 0.2, 0.0]), "m3": np.array([0.0, 0.0, 0.3])}
     body_position_mm_ = np.array([1000.0, 2000.0, 500.0])
@@ -115,7 +132,13 @@ def test_marker_constellation_in_body_frame() -> None:
         ]
     }
     occluded_frame_ = {"subjects": [dict(frame_["subjects"][0], markers=[_Marker("m1", True)])]}
-    names_, points_ = Marker_constellation({"frames": [frame_, occluded_frame_]}, "body")
+    # Occluded pose that lost its flags: all-zero rotation, markers far away; must be ignored
+    zero_segment_ = dict(frame_["subjects"][0]["segments"][0], rotation_xyzw=[0.0, 0.0, 0.0, 0.0])
+    far_marker_ = {"name": "m1", "position_mm": [9000.0, 9000.0, 9000.0], "occluded": False}
+    zero_rotation_frame_ = {
+        "subjects": [dict(frame_["subjects"][0], segments=[zero_segment_], markers=[far_marker_])]
+    }
+    names_, points_ = Marker_constellation({"frames": [frame_, occluded_frame_, zero_rotation_frame_]}, "body")
 
     assert names_ == ["m1", "m2", "m3"]
     for index_, name_ in enumerate(names_):

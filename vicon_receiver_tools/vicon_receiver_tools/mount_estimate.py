@@ -35,6 +35,8 @@ import yaml
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
+from vicon_receiver_tools.viewer import Is_unit_quaternion
+
 # Distance from the mesh surface to a marker centre [m]: 7 mm marker radius + ~3 mm base
 DEFAULT_SURFACE_OFFSET_M: float = 0.010
 
@@ -73,7 +75,8 @@ class MountEstimateResult:
 def Marker_constellation(recording: dict[str, Any], subject: str) -> tuple[list[str], np.ndarray]:
     """Average marker positions of a subject in its Vicon body frame, from a probe recording.
 
-    Frames where the segment or a marker is occluded are skipped (per marker).
+    Frames where the segment is occluded or has no valid rotation are skipped, and occluded
+    markers.
 
     Args:
         recording: Parsed probe JSON (scripts/probe.sh).
@@ -95,6 +98,9 @@ def Marker_constellation(recording: dict[str, Any], subject: str) -> tuple[list[
                 continue
             segment_ = subject_["segments"][0]
             if segment_.get("translation_occluded", True) or segment_.get("rotation_occluded", True):
+                continue
+            # Vicon sends [0, 0, 0, 0] for an occluded rotation: never use it, flagged or not
+            if not Is_unit_quaternion(np.asarray(segment_["rotation_xyzw"], dtype=float)):
                 continue
 
             position_ = np.asarray(segment_["translation_mm"], dtype=float) / 1000.0
@@ -251,7 +257,12 @@ def Main(argv: list[str] | None = None) -> int:
 
         constraint_ = config_.mount_estimate
         constrained_ = Top_marker_indices(body_points_, constraint_.top_markers_count)
-        constraint_mesh_ = Link_mesh(urdf_, constraint_.top_markers_link, config_.robot.mount_link, model_dir_)
+        # top_markers_count 0: no constraint, no mesh needed
+        constraint_mesh_ = (
+            Link_mesh(urdf_, constraint_.top_markers_link, config_.robot.mount_link, model_dir_)
+            if constrained_
+            else None
+        )
 
         estimate_ = Fit_mount(
             body_points_,

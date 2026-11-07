@@ -29,6 +29,12 @@ namespace
     /// (healthy clocks differ by a few ppm; 1 % means a broken local clock).
     constexpr double kClockRateErrorLimit = 0.01;
 
+    /// Duration of one clock-rate measurement [s]: arrival jitter (~10 ms) is 0.1 % of it.
+    constexpr double kClockCheckMeasurementS = 10.0;
+
+    /// Blocks at both ends of a clock-rate measurement whose least delayed frames are compared [s].
+    constexpr double kClockCheckBlockS = 1.0;
+
     /// Tolerance when deciding whether a frame-number jump can be made of dropped frames [s].
     constexpr double kStaleFrameMarginS = 1.0;
 
@@ -115,6 +121,8 @@ ViconReceiverNode::ViconReceiverNode(const rclcpp::NodeOptions &options) : Node(
     frame_publisher_ = rclcpp::Node::create_publisher<vicon_receiver_msgs::msg::ViconFrame>(
         ns_name + "/frame", rclcpp::QoS(rclcpp::KeepLast(kFrameQueueDepth)).reliable());
 
+    local_clock_rate_monitor = std::make_unique<vicon_receiver::LocalClockRateMonitor>(
+        kClockCheckMeasurementS, kClockCheckBlockS);
     status_period_start = std::chrono::steady_clock::now();
 }
 
@@ -223,8 +231,8 @@ bool ViconReceiverNode::connect()
     msg = "Connection successfully established with " + hostname;
     cout << msg << endl;
 
-    // The first frame of a connection may be stale: see read_frame_header()
-    frames_since_connect = 0;
+    // The server first sends frames left over from its previous session: new timeline
+    this->reset_stream_state();
 
     // Enable the data the node uses: segments always, markers and their cameras on request
     vicon_client.EnableSegmentData();
@@ -278,36 +286,94 @@ bool ViconReceiverNode::disconnect()
     return !vicon_client.IsConnected().Connected;
 }
 
+// A new connection starts a new frame timeline: nothing carries over from the previous one
+void ViconReceiverNode::reset_stream_state()
+{
+    leftover_frame_filter.restart();
+    dropped_frames.restart_sequence();
+    acquisition_clock->reset();
+    local_clock_rate_monitor->restart();
+    previous_receive_s.reset();
+    console_status_line.reset();
+    status_period_start = std::chrono::steady_clock::now();
+}
+
+// Hold back the frames sent first after connecting until the live stream is confirmed
+bool ViconReceiverNode::accept_live_frame(const double receive_steady_s)
+{
+    if (leftover_frame_filter.confirmed())
+    {
+        return true;
+    }
+
+    // Without frame numbers the leftovers cannot be recognised: every frame is used
+    const Output_GetFrameNumber frame_number = vicon_client.GetFrameNumber();
+    if (frame_number.Result != Result::Success)
+    {
+        return true;
+    }
+
+    // Without a rate only the frame numbers are checked
+    const Output_GetFrameRate frame_rate = vicon_client.GetFrameRate();
+    const double frame_rate_hz =
+        frame_rate.Result == Result::Success ? frame_rate.FrameRateHz : 0.0;
+
+    if (!leftover_frame_filter.accept(frame_number.FrameNumber, receive_steady_s, frame_rate_hz))
+    {
+        return false;
+    }
+    RCLCPP_INFO(this->get_logger(),
+                "Live stream from frame %lu; %lu frame(s) held back before it (left over from the "
+                "server's previous session, or first live frames before confirmation)",
+                static_cast<unsigned long>(frame_number.FrameNumber),
+                static_cast<unsigned long>(leftover_frame_filter.rejected()));
+    return true;
+}
+
 // Receive one frame and publish it
 void ViconReceiverNode::get_frame()
 {
     // Waits for the next frame (ServerPush) or requests the latest one (ClientPull)
     const Output_GetFrame frame_result = vicon_client.GetFrame();
 
-    // Taken right after the frame arrived: input of the acquisition-time estimate
+    // Taken right after the frame arrived: input of the acquisition-time estimate (system clock)
+    // and of the clock-rate check (monotonic clock, not affected by clock steps)
     const rclcpp::Time receive_time = this->get_clock()->now();
+    const double receive_steady_s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 
     if (frame_result.Result != Result::Success)
     {
         if (frame_result.Result == Result::NotConnected)
         {
-            RCLCPP_WARN(this->get_logger(), "Connection to the Vicon server lost: reconnecting");
+            RCLCPP_WARN(this->get_logger(),
+                        "Connection to the Vicon server lost: reconnecting (frames missed until "
+                        "then are not counted as dropped)");
             this->connect();
         }
         else if (frame_result.Result != Result::NoFrame)
         {
-            // NoFrame only means that no frame is available yet (right after connecting)
+            // NoFrame means that no frame is available (right after connecting, or Tracker
+            // not streaming): the status line reports it
             RCLCPP_WARN_THROTTLE(this->get_logger(),
                                  *this->get_clock(),
                                  5000,
                                  "GetFrame failed: %s",
                                  vicon_receiver::result_name(frame_result.Result).c_str());
         }
+        this->print_status_if_due();
+        return;
+    }
+
+    // Frames left over from the server's previous session are not published
+    if (!this->accept_live_frame(receive_steady_s))
+    {
+        this->print_status_if_due();
         return;
     }
 
     vicon_receiver_msgs::msg::ViconFrame frame_msg;
-    this->read_frame_header(receive_time, frame_msg);
+    this->read_frame_header(receive_time, receive_steady_s, frame_msg);
     this->read_subjects(frame_msg);
     frame_publisher_->publish(frame_msg);
     this->update_status(frame_msg);
@@ -315,6 +381,7 @@ void ViconReceiverNode::get_frame()
 
 // Frame numbers, rate, latency and stamps of the current frame
 void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
+                                          const double receive_steady_s,
                                           vicon_receiver_msgs::msg::ViconFrame &frame_msg)
 {
     frame_msg.header.frame_id = vicon_frame;
@@ -327,32 +394,29 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
     const bool frame_rate_ok = frame_rate.Result == Result::Success && frame_rate.FrameRateHz > 0.0;
 
     // A jump larger than what the server can have produced since the previous frame means that
-    // the previous frame was stale (a Vicon server first sends the frame left over from a
-    // previous connection): not dropped frames, but a new timeline
+    // the previous frame was stale (the leftovers sent after connecting are already held back by
+    // accept_live_frame(); this catches e.g. a server restarted with higher frame numbers): not
+    // dropped frames, but a new timeline
     const std::optional<std::uint64_t> previous_frame = dropped_frames.last_frame_number();
     if (frame_number_ok && frame_rate_ok && previous_frame.has_value() &&
         frame_number.FrameNumber > previous_frame.value() && previous_receive_s.has_value())
     {
         const std::uint64_t frames_missing = frame_number.FrameNumber - previous_frame.value() - 1;
         const double receive_interval_s = receive_time.seconds() - previous_receive_s.value();
-        if (vicon_receiver::is_stale_previous_frame(frames_missing,
-                                                    receive_interval_s,
-                                                    frame_rate.FrameRateHz,
-                                                    frames_since_connect,
-                                                    kStaleFrameMarginS))
+        if (vicon_receiver::is_implausible_frame_jump(
+                frames_missing, receive_interval_s, frame_rate.FrameRateHz, kStaleFrameMarginS))
         {
             RCLCPP_INFO(this->get_logger(),
                         "Frame number jumped by %lu frames in %.3f s: the previous frame was "
-                        "stale (left over from a previous connection); restarting the frame "
-                        "timeline",
+                        "stale; restarting the frame timeline",
                         static_cast<unsigned long>(frames_missing),
                         receive_interval_s);
             dropped_frames.restart_sequence();
             acquisition_clock->reset();
+            local_clock_rate_monitor->restart();
         }
     }
     previous_receive_s = receive_time.seconds();
-    frames_since_connect += 1;
 
     if (frame_number_ok)
     {
@@ -367,9 +431,10 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
         frame_msg.frame_rate_hz = frame_rate.FrameRateHz;
     }
 
-    // Latency of the server pipeline (0 if not reported), and of each of its stages
+    // Latency of the server pipeline (0 if not reported or not a valid duration), and of each
+    // of its stages
     const Output_GetLatencyTotal latency = vicon_client.GetLatencyTotal();
-    if (latency.Result == Result::Success)
+    if (latency.Result == Result::Success && std::isfinite(latency.Total) && latency.Total >= 0.0)
     {
         frame_msg.latency_total_s = latency.Total;
     }
@@ -401,6 +466,20 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
                                                                receive_time.seconds(),
                                                                frame_msg.latency_total_s);
         frame_msg.header.stamp = vicon_receiver::to_time_msg(acquisition_s);
+
+        // Local clock vs Vicon frame clock: they must agree, or every local stamp is off
+        const std::optional<double> clock_error = local_clock_rate_monitor->add_frame(
+            frame_number.FrameNumber, frame_rate.FrameRateHz, receive_steady_s);
+        if (clock_error.has_value() && std::abs(clock_error.value()) > kClockRateErrorLimit)
+        {
+            RCLCPP_WARN(this->get_logger(),
+                        "The local clock runs %.1f %% %s than the Vicon frame clock (measured "
+                        "over %.0f s). Local stamps are unreliable: check the system clock (on "
+                        "WSL, a miscalibrated 'tsc' clocksource; see CLAUDE.md).",
+                        100.0 * std::abs(clock_error.value()),
+                        clock_error.value() > 0.0 ? "faster" : "slower",
+                        kClockCheckMeasurementS);
+        }
     }
     else
     {
@@ -619,12 +698,7 @@ void ViconReceiverNode::update_status(const vicon_receiver_msgs::msg::ViconFrame
     {
         latency_s = frame_msg.latency_total_s;
     }
-    std::optional<double> frame_rate_hz;
-    if (frame_msg.frame_rate_hz > 0.0)
-    {
-        frame_rate_hz = frame_msg.frame_rate_hz;
-    }
-    console_status_line.add_frame(frame_msg.frames_dropped, latency_s, frame_rate_hz);
+    console_status_line.add_frame(frame_msg.frames_dropped, latency_s);
 
     for (const vicon_receiver_msgs::msg::SubjectState &subject : frame_msg.subjects)
     {
@@ -652,31 +726,23 @@ void ViconReceiverNode::update_status(const vicon_receiver_msgs::msg::ViconFrame
         console_status_line.add_subject(subject.name, quality, occluded, camera_counts);
     }
 
+    this->print_status_if_due();
+}
+
+// One status line per period, "no frames in the last ... s" when nothing was published
+void ViconReceiverNode::print_status_if_due()
+{
+    if (status_period_s <= 0.0)
+    {
+        return;
+    }
+
     const auto now = std::chrono::steady_clock::now();
     const double elapsed_s = std::chrono::duration<double>(now - status_period_start).count();
     if (elapsed_s >= status_period_s)
     {
-        // Vicon frame clock vs local clock: they must agree, or every local stamp is off
-        // Not in the first period: frames queued while connecting arrive in a burst
-        const std::optional<double> clock_error =
-            console_status_line.local_clock_rate_error(elapsed_s);
-        if (clock_check_armed && clock_error.has_value() &&
-            std::abs(clock_error.value()) > kClockRateErrorLimit)
-        {
-            RCLCPP_WARN_THROTTLE(
-                this->get_logger(),
-                *this->get_clock(),
-                10000,
-                "The local clock runs %+.1f %% fast against the Vicon frame clock (frames received "
-                "+ "
-                "dropped vs reported rate). Local stamps are unreliable: check the system "
-                "clock (on WSL, a miscalibrated 'tsc' clocksource; see CLAUDE.md).",
-                -100.0 * clock_error.value());
-        }
-
         RCLCPP_INFO(this->get_logger(), "%s", console_status_line.take_line(elapsed_s).c_str());
         status_period_start = now;
-        clock_check_armed = true;
     }
 }
 

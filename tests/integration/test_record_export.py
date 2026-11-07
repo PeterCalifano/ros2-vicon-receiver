@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import CONFIG_FILE, REPO_ROOT, SCRIPTS_DIR
+from conftest import CONFIG_FILE, REPO_ROOT, SCRIPTS_DIR, ConfigFactory, Wait_or_kill
 
 pytestmark = pytest.mark.integration
 
@@ -30,6 +30,22 @@ TEST_DOMAIN_ID: str = "89"
 # Pattern of the fixture
 OCCLUSION_PERIOD: int = 50
 DROPPED_FRAMES: int = 3
+
+# Start-up of record.sh (node check, ros2 bag record) can take several seconds on a loaded machine
+RECORDING_START_TIMEOUT_S: float = 30.0
+
+# Recording time once the bag file exists [s]
+RECORDING_DURATION_S: float = 4.0
+
+
+def Wait_for_recording(output_dir: Path, timeout_s: float) -> bool:
+    """Wait until a session under output_dir has an MCAP file, i.e. the recorder is recording."""
+    deadline_ = time.monotonic() + timeout_s
+    while time.monotonic() < deadline_:
+        if list(output_dir.glob("*/bag/*.mcap")):
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def Read_csv(path: Path) -> list[dict[str, str]]:
@@ -45,11 +61,12 @@ def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
     environment_["ROS_DOMAIN_ID"] = TEST_DOMAIN_ID
 
     publisher_ = subprocess.Popen(
-        [sys.executable, str(FIXTURE), "--duration", "9"],
+        [sys.executable, str(FIXTURE), "--duration", "40"],
         env=environment_,
         stdout=subprocess.DEVNULL,
         start_new_session=True,
     )
+    recorder_: subprocess.Popen[str] | None = None
     try:
         time.sleep(1.5)
         recorder_ = subprocess.Popen(
@@ -60,13 +77,22 @@ def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
             text=True,
             start_new_session=True,
         )
-        time.sleep(5.0)
+        # Stop only once the recorder is recording: a stop during its start-up leaves no bag
+        assert Wait_for_recording(tmp_path, RECORDING_START_TIMEOUT_S), "the recorder did not start"
+        time.sleep(RECORDING_DURATION_S)
         # Ctrl+C: the recorder closes the bag and completes the session
         os.killpg(recorder_.pid, signal.SIGINT)
         output_, _ = recorder_.communicate(timeout=60)
         assert recorder_.returncode == 0, output_
     finally:
-        publisher_.wait(timeout=30)
+        # A failed step must not leave the recorder or the publisher running
+        if recorder_ is not None and recorder_.poll() is None:
+            os.killpg(recorder_.pid, signal.SIGTERM)
+            Wait_or_kill(recorder_, 30)
+        # The publisher runs longer than any start-up: stop it once the recording is done
+        if publisher_.poll() is None:
+            os.killpg(publisher_.pid, signal.SIGTERM)
+        Wait_or_kill(publisher_, 30)
 
     sessions_ = [path_ for path_ in tmp_path.iterdir() if path_.is_dir()]
     assert len(sessions_) == 1, output_
@@ -100,12 +126,13 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
     assert export_.returncode == 0, export_.stdout + export_.stderr
     exports_ = session_ / "exports"
 
-    # Frames: increasing numbers, the injected gap reported once
+    # Frames: increasing numbers, the injected gaps (every 3 s) reported with their size
     frames_ = Read_csv(exports_ / "frames.csv")
-    assert len(frames_) > 200
+    assert len(frames_) > 300
     numbers_ = [int(row_["frame_number"]) for row_ in frames_]
     assert numbers_ == sorted(numbers_)
-    assert [int(row_["frames_dropped"]) for row_ in frames_].count(DROPPED_FRAMES) == 1
+    drops_ = [int(row_["frames_dropped"]) for row_ in frames_ if row_["frames_dropped"] != "0"]
+    assert drops_ and set(drops_) == {DROPPED_FRAMES}
 
     # Poses: occlusion mask exactly on the multiples of the occlusion period, pose kept as sent
     poses_ = Read_csv(exports_ / "poses_test_body_test_body.csv")
@@ -137,6 +164,39 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
         )
         assert file_["subjects/test-body/markers/test-body3/camera_count"][()].max() == 5
         assert "meta_yaml" in file_.attrs
+
+
+def test_record_stops_before_creating_a_session_on_a_missing_entry(
+    ros_env: dict[str, str], tmp_path: Path, make_config: ConfigFactory
+) -> None:
+    """A config without stream_mode: record.sh fails by name and creates no session directory."""
+    environment_ = dict(ros_env)
+    environment_["ROS_DOMAIN_ID"] = TEST_DOMAIN_ID
+    config_ = make_config(remove=["stream_mode"])
+    output_dir_ = tmp_path / "sessions"
+
+    publisher_ = subprocess.Popen(
+        [sys.executable, str(FIXTURE), "--duration", "6"],
+        env=environment_,
+        stdout=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        time.sleep(1.5)
+        result_ = subprocess.run(
+            [str(SCRIPTS_DIR / "record.sh"), "-c", str(config_), "-o", str(output_dir_)],
+            env=environment_,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    finally:
+        Wait_or_kill(publisher_, 30)
+
+    assert result_.returncode != 0, result_.stdout
+    assert "stream_mode" in result_.stderr
+    assert not output_dir_.exists() or not any(output_dir_.iterdir())
 
 
 def test_export_requires_a_format(tmp_path: Path, ros_env: dict[str, str]) -> None:

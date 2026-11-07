@@ -14,6 +14,8 @@ import textwrap
 
 import pytest
 
+from conftest import Wait_or_kill
+
 pytestmark = pytest.mark.integration
 
 # Random-ish domain so that the test does not interfere with other ROS 2 systems on the machine
@@ -71,7 +73,7 @@ def test_two_processes_exchange_messages(ros_env: dict[str, str]) -> None:
             check=True,
         )
     finally:
-        talker_.wait(timeout=30)
+        Wait_or_kill(talker_, 30)
 
     received_ = int(listener_.stdout.strip().splitlines()[-1])
     # 6 s at 10 Hz is ~60 messages; discovery takes part of the first second

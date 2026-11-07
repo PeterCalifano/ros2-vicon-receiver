@@ -65,7 +65,7 @@ This is NOT an official ROS 2 package, but it has been successfully tested with 
 
 - **`ViconFrame` topic** (`<namespace>/frame`, package `vicon_receiver_msgs`): one message per Vicon frame with every subject, segment (pose + **occlusion mask**) and marker (position + cameras that saw it), object quality, frame number, dropped frames and latency per pipeline stage.
 - **Acquisition-time stamps**: messages are stamped with the estimated camera acquisition time (frame-number timeline fitted to receive time − server latency), not the receive time; the raw receive time is kept in `ViconFrame`.
-- **ServerPush streaming** (`stream_mode` parameter) so that a slow consumer gets every frame late instead of losing it; stale frames sent after connecting are detected.
+- **ServerPush streaming** (`stream_mode` parameter) so that a slow consumer gets every frame late instead of losing it; the stale frames a server sends first after connecting are never published.
 - **Occluded poses** are no longer published as `PoseStamped`/TF (Vicon sends an all-zero pose); they stay in `ViconFrame` with their mask.
 - **YAML configuration only**: `config/vicon_client.yaml` holds every node parameter; the node has no built-in defaults and stops with a clear error on a missing or invalid entry. `client.launch.py` takes only `params_file`.
 - **Scripts**: build (installs ROS 2 if needed), launch with a reachability check, probe of the raw stream, live browser viewer (G1 model, camera frustums), MCAP recording and optional CSV/HDF5 export; live console telemetry.
@@ -377,7 +377,7 @@ RViz view showing TF frames and a Pose display for a tracked subject (e.g., /vic
 
 **On WSL, other ROS 2 processes do not see the node** (`ros2 topic list` is empty): WSL mirrored networking routes 127.0.0.1 to Windows. `source scripts/source_ros_env.sh` (the scripts do it themselves) selects `config/fastdds_wsl.xml`; use `--no-daemon` with `ros2 topic/node list/echo`.
 
-**"The local clock runs ... % fast against the Vicon frame clock"**: the local clock is wrong, so every local stamp is too. On WSL the `tsc` clock source was measured 4 % fast; switch to `hyperv_clocksource_tsc_page` (see CLAUDE.md) and restart WSL.
+**"The local clock runs ... % faster (or slower) than the Vicon frame clock"** (checked over 10 s): the local clock is wrong, so every local stamp is too. On WSL the `tsc` clock source was measured 4 % fast; switch to `hyperv_clocksource_tsc_page` (see CLAUDE.md) and restart WSL.
 
 **"Frame number jumped ... the previous frame was stale"** after connecting: normal; the Vicon server first sends frames left over from its previous session. They are not counted as dropped.
 

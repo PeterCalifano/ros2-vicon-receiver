@@ -138,6 +138,29 @@ def shell() -> ShellRunner:
 
 
 # -------------------------------------------------------------------------------------------------
+# Child processes
+# -------------------------------------------------------------------------------------------------
+def Wait_or_kill(process: subprocess.Popen, timeout_s: float) -> None:
+    """Wait for a child process; past timeout_s, kill it with its process group (if it leads one).
+
+    Meant for finally blocks: a failing integration test must not leave ROS processes behind.
+    """
+    try:
+        process.wait(timeout=timeout_s)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        if os.getpgid(process.pid) == process.pid:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass
+    process.wait(timeout=DEFAULT_TIMEOUT_S)
+
+
+# -------------------------------------------------------------------------------------------------
 # Parameter files
 # -------------------------------------------------------------------------------------------------
 def Load_default_parameters() -> dict[str, Any]:

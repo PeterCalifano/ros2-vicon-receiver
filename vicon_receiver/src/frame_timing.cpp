@@ -20,6 +20,10 @@ namespace vicon_receiver
     {
         /// Relative change of the frame rate considered a new rate (new timeline, new measurement).
         constexpr double kFrameRateTolerance = 1e-9;
+
+        /// Fraction of the nominal duration of a run over which its frames must have arrived:
+        /// leftovers come back to back, live frames at the rate (a few ms apart while draining).
+        constexpr double kMinRunSpanFraction = 0.5;
     } // namespace
 
     // --------------------------------------------------------------------------------------------
@@ -193,5 +197,192 @@ namespace vicon_receiver
         }
         return is_implausible_frame_jump(
             frames_missing, receive_interval_s, frame_rate_hz, margin_s);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Frames left over from the server's previous session
+    // --------------------------------------------------------------------------------------------
+
+    StartupLeftoverFrameFilter::StartupLeftoverFrameFilter(std::uint64_t consecutive_frames)
+        : consecutive_frames_(consecutive_frames)
+    {
+        if (consecutive_frames_ < 2)
+        {
+            throw std::invalid_argument(
+                "StartupLeftoverFrameFilter: need at least 2 consecutive frames, got " +
+                std::to_string(consecutive_frames_));
+        }
+    }
+
+    bool StartupLeftoverFrameFilter::accept(std::uint64_t frame_number,
+                                            double receive_time_s,
+                                            double frame_rate_hz)
+    {
+        if (confirmed_)
+        {
+            return true;
+        }
+
+        // Extend the run of consecutive frame numbers, or start a new one at this frame
+        const bool consecutive = previous_frame_number_.has_value() &&
+                                 frame_number == previous_frame_number_.value() + 1;
+        if (consecutive)
+        {
+            run_length_ += 1;
+        }
+        else
+        {
+            run_length_ = 1;
+            run_start_time_s_ = receive_time_s;
+        }
+        previous_frame_number_ = frame_number;
+
+        // Long enough, and not a burst of buffered frames
+        if (run_length_ >= consecutive_frames_)
+        {
+            const double nominal_span_s =
+                frame_rate_hz > 0.0 ? static_cast<double>(run_length_ - 1) / frame_rate_hz : 0.0;
+            if (receive_time_s - run_start_time_s_ >= kMinRunSpanFraction * nominal_span_s)
+            {
+                confirmed_ = true;
+                return true;
+            }
+        }
+
+        rejected_ += 1;
+        return false;
+    }
+
+    bool StartupLeftoverFrameFilter::confirmed() const
+    {
+        return confirmed_;
+    }
+
+    std::uint64_t StartupLeftoverFrameFilter::rejected() const
+    {
+        return rejected_;
+    }
+
+    void StartupLeftoverFrameFilter::restart()
+    {
+        confirmed_ = false;
+        previous_frame_number_.reset();
+        run_length_ = 0;
+        run_start_time_s_ = 0.0;
+        rejected_ = 0;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Rate of the local clock
+    // --------------------------------------------------------------------------------------------
+
+    LocalClockRateMonitor::LocalClockRateMonitor(double measurement_s, double block_s)
+        : measurement_s_(measurement_s), block_s_(block_s)
+    {
+        // The first and the last block must not overlap
+        if (!std::isfinite(block_s_) || block_s_ <= 0.0 || !std::isfinite(measurement_s_) ||
+            measurement_s_ <= 2.0 * block_s_)
+        {
+            throw std::invalid_argument(
+                "LocalClockRateMonitor: need block_s > 0 and measurement_s > "
+                "2 block_s, got block_s " +
+                std::to_string(block_s_) + ", measurement_s " + std::to_string(measurement_s_));
+        }
+    }
+
+    std::optional<double> LocalClockRateMonitor::add_frame(std::uint64_t frame_number,
+                                                           double frame_rate_hz,
+                                                           double local_time_s)
+    {
+        if (!std::isfinite(frame_rate_hz) || frame_rate_hz <= 0.0)
+        {
+            throw std::invalid_argument("LocalClockRateMonitor: invalid frame rate " +
+                                        std::to_string(frame_rate_hz));
+        }
+
+        // A broken timeline cannot be compared: start a new measurement at this frame
+        if (started_)
+        {
+            const bool rate_changed =
+                std::abs(frame_rate_hz - frame_rate_hz_) > kFrameRateTolerance * frame_rate_hz_;
+            const bool paused = local_time_s - last_time_s_ > block_s_;
+            if (frame_number <= last_frame_ || rate_changed || paused)
+            {
+                restarts_ += 1;
+                started_ = false;
+            }
+        }
+        if (!started_)
+        {
+            start(frame_number, frame_rate_hz, local_time_s);
+        }
+        last_frame_ = frame_number;
+        last_time_s_ = local_time_s;
+
+        // Offset of this frame: local time minus Vicon time since the reference frame
+        const double vicon_time_s =
+            static_cast<double>(frame_number - reference_frame_) / frame_rate_hz_;
+        const double offset_s = local_time_s - vicon_time_s;
+
+        const double elapsed_s = local_time_s - start_time_s_;
+        if (elapsed_s < block_s_)
+        {
+            keep_minimum(first_block_, offset_s, frame_number);
+        }
+        else if (elapsed_s >= measurement_s_ - block_s_)
+        {
+            keep_minimum(last_block_, offset_s, frame_number);
+        }
+
+        if (elapsed_s < measurement_s_ || !first_block_.has_value() || !last_block_.has_value())
+        {
+            return std::nullopt;
+        }
+
+        // Growth of the least delayed offset per second of Vicon time
+        const double vicon_interval_s =
+            static_cast<double>(last_block_->frame_number - first_block_->frame_number) /
+            frame_rate_hz_;
+        const double rate_error =
+            (last_block_->offset_s - first_block_->offset_s) / vicon_interval_s;
+
+        // The next measurement starts with this frame
+        start(frame_number, frame_rate_hz, local_time_s);
+        keep_minimum(first_block_, local_time_s, frame_number);
+        return rate_error;
+    }
+
+    void LocalClockRateMonitor::restart()
+    {
+        started_ = false;
+        first_block_.reset();
+        last_block_.reset();
+    }
+
+    std::uint64_t LocalClockRateMonitor::restarts() const
+    {
+        return restarts_;
+    }
+
+    void LocalClockRateMonitor::start(std::uint64_t frame_number,
+                                      double frame_rate_hz,
+                                      double local_time_s)
+    {
+        started_ = true;
+        reference_frame_ = frame_number;
+        frame_rate_hz_ = frame_rate_hz;
+        start_time_s_ = local_time_s;
+        first_block_.reset();
+        last_block_.reset();
+    }
+
+    void LocalClockRateMonitor::keep_minimum(std::optional<LeastDelayedFrame> &minimum,
+                                             double offset_s,
+                                             std::uint64_t frame_number)
+    {
+        if (!minimum.has_value() || offset_s < minimum->offset_s)
+        {
+            minimum = LeastDelayedFrame{offset_s, frame_number};
+        }
     }
 } // namespace vicon_receiver

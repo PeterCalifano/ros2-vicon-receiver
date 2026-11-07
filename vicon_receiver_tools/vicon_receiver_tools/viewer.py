@@ -4,7 +4,7 @@ Subscribes to the ViconFrame topic of the vicon_client node and shows, in the Vi
 
 - the axes of every subject segment, hidden when occluded, and a trail of recent positions;
 - the labeled markers, coloured by the number of cameras that saw them (green: enough cameras,
-  yellow: fewer, red: occluded);
+  yellow: fewer); occluded markers are not drawn (Vicon sends no position for them);
 - the G1 Unitree model attached to its Vicon subject through the mount transform, and the camera
   frustums at the optical frames of the model;
 - a telemetry panel (frame number, rate, latency, dropped frames, quality, occlusion);
@@ -41,16 +41,22 @@ from vicon_receiver_tools.viewer_config import (
     ViewerConfig,
 )
 
-# Marker colours (RGB): enough cameras, few cameras, occluded
+# Marker colours (RGB): enough cameras, few cameras
 COLOR_GOOD: tuple[int, int, int] = (40, 180, 60)
 COLOR_FEW: tuple[int, int, int] = (235, 180, 30)
-COLOR_OCCLUDED: tuple[int, int, int] = (220, 40, 40)
 
 # Colour of the trails
 COLOR_TRAIL: tuple[int, int, int] = (60, 120, 230)
 
 # Period of the telemetry panel updates [s] (text does not need the scene rate)
 TELEMETRY_PERIOD_S: float = 0.5
+
+# Receive times used for the displayed rate [s]: the rate falls to 0 this long after the last frame
+RATE_WINDOW_S: float = 1.0
+
+# Accepted deviation of a quaternion norm from 1 (same as the node: Vicon sends [0, 0, 0, 0] for an
+# occluded segment)
+QUATERNION_NORM_TOLERANCE: float = 1e-3
 
 
 # -------------------------------------------------------------------------------------------------
@@ -98,27 +104,31 @@ class ViewerFrame:
     subjects: list[ViewerSubject]
 
 
+def Is_unit_quaternion(quaternion: np.ndarray) -> bool:
+    """Whether a quaternion (any component order) has unit norm, i.e. is a valid rotation."""
+    return bool(abs(np.linalg.norm(quaternion) - 1.0) <= QUATERNION_NORM_TOLERANCE)
+
+
+def Viewer_segment_from_message(segment: Any) -> ViewerSegment:
+    """Convert a SegmentState; a segment without a valid rotation counts as occluded."""
+    # Vicon/ROS order x, y, z, w -> viser order w, x, y, z
+    wxyz_ = np.array(
+        [segment.orientation.w, segment.orientation.x, segment.orientation.y, segment.orientation.z]
+    )
+    occluded_ = bool(segment.translation_occluded or segment.rotation_occluded) or not Is_unit_quaternion(wxyz_)
+    return ViewerSegment(
+        name=segment.name,
+        position=np.array([segment.position.x, segment.position.y, segment.position.z]),
+        wxyz=wxyz_,
+        occluded=occluded_,
+    )
+
+
 def Viewer_frame_from_message(message: Any) -> ViewerFrame:
     """Convert a vicon_receiver_msgs/ViconFrame (or an object with the same fields)."""
     subjects_: list[ViewerSubject] = []
     for subject_ in message.subjects:
-        segments_ = [
-            ViewerSegment(
-                name=segment_.name,
-                position=np.array([segment_.position.x, segment_.position.y, segment_.position.z]),
-                # Vicon/ROS order x, y, z, w -> viser order w, x, y, z
-                wxyz=np.array(
-                    [
-                        segment_.orientation.w,
-                        segment_.orientation.x,
-                        segment_.orientation.y,
-                        segment_.orientation.z,
-                    ]
-                ),
-                occluded=bool(segment_.translation_occluded or segment_.rotation_occluded),
-            )
-            for segment_ in subject_.segments
-        ]
+        segments_ = [Viewer_segment_from_message(segment_) for segment_ in subject_.segments]
         markers_ = [
             ViewerMarker(
                 name=marker_.name,
@@ -151,15 +161,10 @@ def Viewer_frame_from_message(message: Any) -> ViewerFrame:
 # Pure helpers
 # -------------------------------------------------------------------------------------------------
 def Marker_colors(markers: list[ViewerMarker], good_camera_count: int) -> np.ndarray:
-    """RGB colour (N x 3, uint8) of each marker from its visibility."""
+    """RGB colour (N x 3, uint8) of each visible marker from the number of cameras that saw it."""
     colors_ = np.zeros((len(markers), 3), dtype=np.uint8)
     for index_, marker_ in enumerate(markers):
-        if marker_.occluded:
-            colors_[index_] = COLOR_OCCLUDED
-        elif marker_.camera_count >= good_camera_count:
-            colors_[index_] = COLOR_GOOD
-        else:
-            colors_[index_] = COLOR_FEW
+        colors_[index_] = COLOR_GOOD if marker_.camera_count >= good_camera_count else COLOR_FEW
     return colors_
 
 
@@ -260,10 +265,15 @@ class LatestFrameBuffer:
             points_ = list(self._trails.get(key, ()))
         return np.array(points_, dtype=float) if points_ else np.zeros((0, 3))
 
-    def rate_hz(self) -> float:
-        """Frames per second over the stored receive times (local clock)."""
+    def rate_hz(self, now_s: float | None = None) -> float:
+        """Frames per second over the last RATE_WINDOW_S (local clock); 0 once the stream stops.
+
+        Args:
+            now_s: Current time on the clock of the receive times (default: time.monotonic()).
+        """
+        now_ = time.monotonic() if now_s is None else now_s
         with self._lock:
-            times_ = list(self._receive_times)
+            times_ = [time_ for time_ in self._receive_times if now_ - time_ <= RATE_WINDOW_S]
         if len(times_) < 2 or times_[-1] <= times_[0]:
             return 0.0
         return (len(times_) - 1) / (times_[-1] - times_[0])
@@ -428,18 +438,27 @@ class ViserLiveViewer:
             if subject_.name == self._config.robot.subject:
                 self._update_robot(subject_)
 
+        self.update_telemetry(frame, buffer)
+
+    def update_telemetry(self, frame: ViewerFrame, buffer: LatestFrameBuffer) -> None:
+        """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), also without new frames."""
+        now_ = time.monotonic()
         if now_ - self._last_telemetry_s >= TELEMETRY_PERIOD_S:
             self._telemetry.content = Telemetry_markdown(frame, buffer.rate_hz())
             self._last_telemetry_s = now_
 
     def _update_markers(self, subject: ViewerSubject) -> None:
-        """Markers of one subject as a point cloud, occluded ones left out."""
+        """Markers of one subject as a point cloud; occluded ones have no position and are left out."""
         visible_ = [marker_ for marker_ in subject.markers if not marker_.occluded]
+        handle_ = self._marker_handles.get(subject.ros_name)
         if not visible_:
+            # Hide the markers of the previous frame instead of leaving them frozen in the scene
+            if handle_ is not None:
+                handle_.visible = False
             return
         points_ = np.array([marker_.position for marker_ in visible_], dtype=np.float32)
         colors_ = Marker_colors(visible_, self._config.viewer.good_camera_count)
-        self._server.scene.add_point_cloud(
+        self._marker_handles[subject.ros_name] = self._server.scene.add_point_cloud(
             f"/markers/{subject.ros_name}",
             points=points_,
             colors=colors_,
@@ -520,16 +539,19 @@ def Main(argv: list[str] | None = None) -> int:
     print(f"[viewer] open http://{config_.viewer.host}:{config_.viewer.port} (topic {config_.viewer.topic})")
 
     period_s_ = 1.0 / config_.viewer.update_rate_hz
-    first_frame_reported_ = False
+    last_frame_: ViewerFrame | None = None
     try:
         while rclpy.ok():
             frame_ = buffer_.latest()
-            if frame_ is not None:
-                if not first_frame_reported_:
+            if frame_ is not None and frame_ is not last_frame_:
+                if last_frame_ is None:
                     subjects_ = ", ".join(subject_.name for subject_ in frame_.subjects) or "none"
                     print(f"[viewer] receiving frames (frame {frame_.frame_number}, subjects: {subjects_})")
-                    first_frame_reported_ = True
                 viewer_.update(frame_, buffer_)
+                last_frame_ = frame_
+            elif frame_ is not None:
+                # No new frame: the scene stays, only the telemetry (rate falling to 0) changes
+                viewer_.update_telemetry(frame_, buffer_)
             time.sleep(period_s_)
     except KeyboardInterrupt:
         pass

@@ -40,10 +40,10 @@ tests/
     fake_vicon_frames.py        synthetic ViconFrame publisher named vicon_client (record/export)
   unit/
     cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node (incl. invalid values)
-    cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames
+    cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames, leftover frames, local clock rate
     cpp/test_utilities.cpp             GoogleTest: running statistics, SDK names
     cpp/test_ros_conversions.cpp       GoogleTest: Vicon names -> ROS names, SDK results -> messages, TF, times
-    cpp/test_console_status_line.cpp       GoogleTest: console telemetry line, local clock check
+    cpp/test_console_status_line.cpp       GoogleTest: console telemetry line
     cpp/test_vicon_receiver_node_publishers.cpp  GoogleTest: publisher creation with Vicon names
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer and options
     test_common_sh.py                  scripts/lib/common.sh functions
@@ -54,6 +54,7 @@ tests/
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
     test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs
     test_tools_mount.py                robot model access and mount fit (synthetic robot; needs the conda environment)
+    test_tools_export.py               export to CSV without ROS (fake reader), partial-output cleanup
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
     test_messages.py            vicon_receiver_msgs field names and types (interface pin)
@@ -62,7 +63,7 @@ tests/
     test_launch_file.py         client.launch.py: only a required params_file argument
     test_launch_sh.py           launch.sh: reachability gate and node start-up
     test_probe.py               vicon_probe and probe.sh: CLI, connection failures, live recording
-    test_record_export.py       record.sh (MCAP, metadata, SIGINT stop) and export.sh (CSV, HDF5)
+    test_record_export.py       record.sh (MCAP, metadata, SIGINT stop, missing entry) and export.sh (CSV, HDF5)
 ```
 
 ## How the C++ tests are built

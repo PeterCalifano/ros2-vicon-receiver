@@ -25,9 +25,7 @@ namespace vicon_receiver
         }
     } // namespace
 
-    void ConsoleStatusLine::add_frame(std::uint64_t frames_dropped,
-                                      std::optional<double> latency_s,
-                                      std::optional<double> frame_rate_hz)
+    void ConsoleStatusLine::add_frame(std::uint64_t frames_dropped, std::optional<double> latency_s)
     {
         frames_ += 1;
         frames_dropped_ += frames_dropped;
@@ -35,23 +33,6 @@ namespace vicon_receiver
         {
             latency_s_.add(latency_s.value());
         }
-        if (frame_rate_hz.has_value())
-        {
-            frame_rate_hz_.add(frame_rate_hz.value());
-        }
-    }
-
-    std::optional<double> ConsoleStatusLine::local_clock_rate_error(double elapsed_s) const
-    {
-        if (frames_ < kMinFramesForClockCheck || frame_rate_hz_.count() == 0 || elapsed_s <= 0.0)
-        {
-            return std::nullopt;
-        }
-
-        // Frames the server produced in the period, according to its own frame numbers
-        const double produced_frames = static_cast<double>(frames_ + frames_dropped_);
-        const double expected_frames = frame_rate_hz_.mean() * elapsed_s;
-        return produced_frames / expected_frames - 1.0;
     }
 
     void ConsoleStatusLine::add_subject(const std::string &name,
@@ -109,13 +90,16 @@ namespace vicon_receiver
             }
         }
 
-        // Start a new period
+        this->reset();
+        return line.str();
+    }
+
+    void ConsoleStatusLine::reset()
+    {
         frames_ = 0;
         frames_dropped_ = 0;
         latency_s_.reset();
-        frame_rate_hz_.reset();
         subjects_.clear();
-        return line.str();
     }
 
     std::string ConsoleStatusLine::format_subject(const std::string &name,

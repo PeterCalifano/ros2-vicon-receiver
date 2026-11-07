@@ -42,28 +42,8 @@ namespace vicon_receiver
          *
          * @param frames_dropped  Frames missing before this one.
          * @param latency_s       Server pipeline latency [s], if the server reported it.
-         * @param frame_rate_hz   Frame rate reported by the server [Hz], if any.
          */
-        void add_frame(std::uint64_t frames_dropped,
-                       std::optional<double> latency_s,
-                       std::optional<double> frame_rate_hz = std::nullopt);
-
-        /**
-         * @brief Relative disagreement between the local clock and the Vicon frame clock over
-         *        the current period.
-         *
-         * The Vicon server numbers its frames at the reported rate, so received + dropped
-         * frames should match rate x elapsed local time. A large difference (e.g. 4 %) means
-         * that the local clock runs fast or slow (seen on WSL with a miscalibrated TSC).
-         *
-         * @param elapsed_s  Duration of the period on the local clock [s].
-         * @return (received + dropped) / (rate x elapsed) - 1, or nothing if there are fewer
-         *         than kMinFramesForClockCheck frames or no reported rate.
-         */
-        std::optional<double> local_clock_rate_error(double elapsed_s) const;
-
-        /// Frames needed in a period to compare the local clock with the Vicon frame clock.
-        static constexpr std::uint64_t kMinFramesForClockCheck = 50;
+        void add_frame(std::uint64_t frames_dropped, std::optional<double> latency_s);
 
         /**
          * @brief Record one subject of the current frame.
@@ -85,6 +65,9 @@ namespace vicon_receiver
          */
         std::string take_line(double elapsed_s);
 
+        /// Forget the current period (e.g. after reconnecting) and start a new one.
+        void reset();
+
       private:
         /// What one subject did during the period.
         struct SubjectPeriodTelemetry
@@ -102,7 +85,6 @@ namespace vicon_receiver
         std::uint64_t frames_ = 0;
         std::uint64_t frames_dropped_ = 0;
         RunningMinMeanMax latency_s_;
-        RunningMinMeanMax frame_rate_hz_;
         std::map<std::string, SubjectPeriodTelemetry> subjects_;
     };
 } // namespace vicon_receiver

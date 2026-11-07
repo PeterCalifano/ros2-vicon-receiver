@@ -89,19 +89,22 @@ class ViconReceiverNode : public rclcpp::Node
     double status_period_s;
 
     // --- Frame processing state ---
+    /// Consecutive frame numbers that confirm the live stream after connecting: more than the
+    /// leftovers of the server's previous session seen back to back (up to 2)
+    static constexpr std::uint64_t kLiveStreamConsecutiveFrames = 3;
+    /// Holds back the frames left over from the server's previous session after connecting
+    vicon_receiver::StartupLeftoverFrameFilter leftover_frame_filter{kLiveStreamConsecutiveFrames};
     /// Estimated camera acquisition time of each frame
     std::unique_ptr<vicon_receiver::AcquisitionClock> acquisition_clock;
+    /// Local clock rate compared with the Vicon frame clock
+    std::unique_ptr<vicon_receiver::LocalClockRateMonitor> local_clock_rate_monitor;
     /// Frames missing from the frame-number sequence
     vicon_receiver::DroppedFrameCounter dropped_frames;
     /// Console telemetry of the current status period
     vicon_receiver::ConsoleStatusLine console_status_line;
     /// Start of the current status period
     std::chrono::steady_clock::time_point status_period_start;
-    /// Whether the local clock check runs (not in the first status period after starting)
-    bool clock_check_armed = false;
-    /// Frames received since the last (re)connection (detects a stale first frame)
-    std::uint64_t frames_since_connect = 0;
-    /// Local receive time of the previous frame [s] (detects a stale first frame)
+    /// Local receive time of the previous frame [s] (detects stale frames)
     std::optional<double> previous_receive_s;
     /// Whether the "no frame rate: receive time used as stamp" warning was already logged
     bool missing_rate_warned = false;
@@ -116,13 +119,29 @@ class ViconReceiverNode : public rclcpp::Node
     /// Read and validate the streaming, stamping and telemetry parameters.
     void read_frame_parameters();
 
+    /// Forget everything about the previous frame timeline (called after each connection).
+    void reset_stream_state();
+
     /**
-     * @brief Fill the frame-level fields of a ViconFrame (numbers, rate, latency, stamps).
+     * @brief Whether the current frame belongs to the live stream (see StartupLeftoverFrameFilter).
      *
-     * @param receive_time  Local time at which the frame was received.
-     * @param frame_msg     Message to fill; header.stamp gets the estimated acquisition time.
+     * After connecting, the frames left over from the server's previous session and the first
+     * live frames (until the stream is confirmed) are held back: neither published nor counted.
+     *
+     * @param receive_steady_s  Monotonic local time at which the frame was received [s].
+     */
+    bool accept_live_frame(double receive_steady_s);
+
+    /**
+     * @brief Fill the frame-level fields of a ViconFrame (numbers, rate, latency, stamps) and
+     *        check the local clock rate.
+     *
+     * @param receive_time      Local time at which the frame was received.
+     * @param receive_steady_s  Monotonic local time at which the frame was received [s].
+     * @param frame_msg         Message to fill; header.stamp gets the estimated acquisition time.
      */
     void read_frame_header(const rclcpp::Time &receive_time,
+                           double receive_steady_s,
                            vicon_receiver_msgs::msg::ViconFrame &frame_msg);
 
     /**
@@ -146,6 +165,9 @@ class ViconReceiverNode : public rclcpp::Node
 
     /// Add the frame to the telemetry and print the status line when the period is over.
     void update_status(const vicon_receiver_msgs::msg::ViconFrame &frame_msg);
+
+    /// Print the status line if the period is over (also while no frame arrives).
+    void print_status_if_due();
 
   public:
     /// Name of the node; also the top-level key of the parameters file.

@@ -47,7 +47,8 @@ vicon_wsl_loopback_address_present()
 }
 
 # Select the Fast DDS profile for this machine and print what was chosen.
-#   - a profile already set in FASTRTPS_DEFAULT_PROFILES_FILE is kept;
+#   - a profile already set in FASTRTPS_DEFAULT_PROFILES_FILE (Fast DDS 2.x) or
+#     FASTDDS_DEFAULT_PROFILES_FILE (3.x) is kept;
 #   - if localhost traffic is redirected (WSL mirrored networking), the
 #     repository profile is exported (both Fast DDS 2.x and 3.x variables) and
 #     ROS_AUTOMATIC_DISCOVERY_RANGE is set to SYSTEM_DEFAULT, because LOCALHOST
@@ -56,8 +57,9 @@ vicon_wsl_loopback_address_present()
 # Always returns 0: a missing fix shows up as a warning, not as a failure.
 vicon_configure_dds()
 {
-    if [[ -n "${FASTRTPS_DEFAULT_PROFILES_FILE:-}" ]]; then
-        echo "[dds] Keeping the Fast DDS profile already set: ${FASTRTPS_DEFAULT_PROFILES_FILE}"
+    local user_profile="${FASTRTPS_DEFAULT_PROFILES_FILE:-${FASTDDS_DEFAULT_PROFILES_FILE:-}}"
+    if [[ -n "${user_profile}" ]]; then
+        echo "[dds] Keeping the Fast DDS profile already set: ${user_profile}"
         return 0
     fi
 

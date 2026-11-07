@@ -199,6 +199,151 @@ namespace vicon_receiver
                                  double frame_rate_hz,
                                  std::uint64_t frames_before_current,
                                  double margin_s);
+
+    // --------------------------------------------------------------------------------------------
+    // Frames left over from the server's previous session
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * @brief Holds back the frames received after connecting until the live stream is confirmed.
+     *
+     * After connecting, a Vicon server first sends one or two frames left over from its previous
+     * session, back to back (< 1 ms apart), then the live frames. Leftovers are usually followed
+     * by a frame-number jump, but not always (two consecutive leftovers were seen while the
+     * Tracker was not streaming). Live frames arrive at the frame rate, or a few ms apart while
+     * a queue drains. The filter therefore confirms the live stream with a run of
+     * consecutive_frames consecutive frame numbers that arrived over at least half of their
+     * nominal duration, and accepts every frame from then on until restart(). The frames of the
+     * run before the confirming one are lost too: the price of never publishing a pose from the
+     * previous session with a current stamp.
+     */
+    class StartupLeftoverFrameFilter
+    {
+      public:
+        /**
+         * @brief Create the filter.
+         *
+         * @param consecutive_frames  Length of the run of consecutive frame numbers that confirms
+         *                            the live stream (>= 2).
+         * @throws std::invalid_argument if consecutive_frames < 2.
+         */
+        explicit StartupLeftoverFrameFilter(std::uint64_t consecutive_frames);
+
+        /**
+         * @brief Decide whether a received frame belongs to the live stream.
+         *
+         * @param frame_number   Frame number reported by the server.
+         * @param receive_time_s Local (monotonic) time at which the frame was received [s].
+         * @param frame_rate_hz  Frame rate reported by the server [Hz]; <= 0 if unknown, then
+         *                       only the frame numbers are checked.
+         * @return true if the frame is live (to be used), false if it is held back.
+         */
+        bool accept(std::uint64_t frame_number, double receive_time_s, double frame_rate_hz);
+
+        /// Whether the live stream was confirmed since the last restart().
+        bool confirmed() const;
+
+        /// Frames held back since the last restart().
+        std::uint64_t rejected() const;
+
+        /// Start over after (re)connecting: frames are held back again until confirmed.
+        void restart();
+
+      private:
+        std::uint64_t consecutive_frames_;
+        bool confirmed_ = false;
+        std::optional<std::uint64_t> previous_frame_number_;
+        /// Current run of consecutive frame numbers: length and receive time of its first frame
+        std::uint64_t run_length_ = 0;
+        double run_start_time_s_ = 0.0;
+        std::uint64_t rejected_ = 0;
+    };
+
+    // --------------------------------------------------------------------------------------------
+    // Rate of the local clock
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * @brief Measures how fast the local clock runs compared with the Vicon frame clock.
+     *
+     * The server numbers its frames at the reported rate, so for a frame k received at local time
+     * t(k):
+     *
+     *     t(k) = t0 + (1 + e) (k - k0) / rate + delay(k)
+     *
+     * where e is the rate error of the local clock and delay(k) > 0 the transport delay. The
+     * offset t(k) - (k - k0) / rate grows by e per second of Vicon time, plus the delay. The
+     * delay varies from frame to frame (arrival jitter up to ~10 ms, more after a network stall),
+     * but its minimum over a block of frames is stable. A measurement therefore takes the
+     * smallest offset over the first block and over the last block of a measurement of
+     * measurement_s seconds, and divides their difference by the Vicon time between them.
+     *
+     * A measurement restarts when the timeline breaks: non-increasing frame number, change of the
+     * reported rate, or no frame for longer than a block (a block without its least delayed
+     * frames would bias its minimum).
+     *
+     * Times must come from a monotonic clock: a step of the system clock is not a rate error.
+     */
+    class LocalClockRateMonitor
+    {
+      public:
+        /**
+         * @brief Create the check.
+         *
+         * @param measurement_s  Duration of a measurement on the local clock [s] (> 2 block_s).
+         * @param block_s        Duration of the first and last blocks of a measurement [s] (> 0).
+         * @throws std::invalid_argument if the durations are not valid.
+         */
+        LocalClockRateMonitor(double measurement_s, double block_s);
+
+        /**
+         * @brief Add a received frame.
+         *
+         * @param frame_number   Frame number reported by the server.
+         * @param frame_rate_hz  Frame rate reported by the server [Hz] (> 0).
+         * @param local_time_s   Monotonic local time at which the frame was received [s].
+         * @return At the end of a measurement, the rate error e of the local clock (0.04: the
+         *         local clock runs 4 % fast); a new measurement then starts with this frame.
+         *         Nothing otherwise.
+         */
+        std::optional<double>
+        add_frame(std::uint64_t frame_number, double frame_rate_hz, double local_time_s);
+
+        /// Drop the current measurement; the next frame starts a new one.
+        void restart();
+
+        /// Number of measurements started over because the timeline broke.
+        std::uint64_t restarts() const;
+
+      private:
+        /// Smallest offset of a block and the frame where it was seen.
+        struct LeastDelayedFrame
+        {
+            double offset_s;            ///< t(k) - (k - k0) / rate, minimum over the block [s]
+            std::uint64_t frame_number; ///< Frame number k of that minimum
+        };
+
+        /// Start a new measurement at this frame.
+        void start(std::uint64_t frame_number, double frame_rate_hz, double local_time_s);
+
+        /// Keep the smaller of the stored minimum and a new offset.
+        static void keep_minimum(std::optional<LeastDelayedFrame> &minimum,
+                                 double offset_s,
+                                 std::uint64_t frame_number);
+
+        double measurement_s_;
+        double block_s_;
+
+        bool started_ = false;
+        std::uint64_t reference_frame_ = 0;
+        double frame_rate_hz_ = 0.0;
+        double start_time_s_ = 0.0;
+        std::uint64_t last_frame_ = 0;
+        double last_time_s_ = 0.0;
+        std::optional<LeastDelayedFrame> first_block_;
+        std::optional<LeastDelayedFrame> last_block_;
+        std::uint64_t restarts_ = 0;
+    };
 } // namespace vicon_receiver
 
 #endif // VICON_RECEIVER_FRAME_TIMING_HPP

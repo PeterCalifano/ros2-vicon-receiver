@@ -90,56 +90,12 @@ TEST(ConsoleStatusLine, TakingTheLineStartsANewPeriod)
     EXPECT_EQ(reporter.take_line(1.0), "no frames in the last 1.0 s");
 }
 
-// -------------------------------------------------------------------------------------------------
-// Local clock vs Vicon frame clock
-// -------------------------------------------------------------------------------------------------
-
-TEST(ConsoleStatusLine, HealthyClockAgreesWithFrameRate)
+TEST(ConsoleStatusLine, ResetForgetsTheCurrentPeriod)
 {
+    // After a reconnection nothing of the interrupted period is reported
     ConsoleStatusLine reporter;
-    for (int frame = 0; frame < 100; ++frame)
-    {
-        reporter.add_frame(0, 0.03, 100.0);
-    }
-    const std::optional<double> error = reporter.local_clock_rate_error(1.0);
-    ASSERT_TRUE(error.has_value());
-    EXPECT_NEAR(error.value(), 0.0, 1e-12);
-}
-
-TEST(ConsoleStatusLine, FastLocalClockIsDetected)
-{
-    // Measured on WSL: 100 Hz frames, none dropped, but 1.042 s of local time per 100 frames
-    ConsoleStatusLine reporter;
-    for (int frame = 0; frame < 100; ++frame)
-    {
-        reporter.add_frame(0, 0.03, 100.0);
-    }
-    const std::optional<double> error = reporter.local_clock_rate_error(1.042);
-    ASSERT_TRUE(error.has_value());
-    EXPECT_NEAR(error.value(), 1.0 / 1.042 - 1.0, 1e-12);
-}
-
-TEST(ConsoleStatusLine, DroppedFramesCountAsProduced)
-{
-    // 90 received + 10 dropped in 1 s at 100 Hz: the clocks agree
-    ConsoleStatusLine reporter;
-    for (int frame = 0; frame < 90; ++frame)
-    {
-        reporter.add_frame(frame == 0 ? 10 : 0, 0.03, 100.0);
-    }
-    EXPECT_NEAR(reporter.local_clock_rate_error(1.0).value(), 0.0, 1e-12);
-}
-
-TEST(ConsoleStatusLine, ClockCheckNeedsEnoughFramesAndARate)
-{
-    ConsoleStatusLine few_frames;
-    few_frames.add_frame(0, 0.03, 100.0);
-    EXPECT_FALSE(few_frames.local_clock_rate_error(0.01).has_value());
-
-    ConsoleStatusLine no_rate;
-    for (int frame = 0; frame < 100; ++frame)
-    {
-        no_rate.add_frame(0, 0.03);
-    }
-    EXPECT_FALSE(no_rate.local_clock_rate_error(1.0).has_value());
+    reporter.add_frame(7, 0.03);
+    reporter.add_subject("body", 1.3, true, {4});
+    reporter.reset();
+    EXPECT_EQ(reporter.take_line(1.0), "no frames in the last 1.0 s");
 }

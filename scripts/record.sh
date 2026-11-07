@@ -94,6 +94,8 @@ write_start_metadata()
 {
     local session_dir="$1"
     local namespace="$2"
+    local vicon_host="$3"
+    local stream_mode="$4"
     local git_revision=""
     git_revision="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     local git_dirty="false"
@@ -111,8 +113,8 @@ machine: "$(hostname)"
 git_revision: "${git_revision}"
 git_dirty: ${git_dirty}
 ros_distro: "${ROS_DISTRO:-unknown}"
-vicon_host: "$(read_config_param "${config_file}" hostname)"
-stream_mode: "$(read_config_param "${config_file}" stream_mode)"
+vicon_host: "${vicon_host}"
+stream_mode: "${stream_mode}"
 topics_regex: "^(/${namespace}/.*|/tf|/tf_static)$"
 storage: "mcap"
 # Local clock source: on WSL, 'tsc' was measured running ~4 % fast (see CLAUDE.md)
@@ -128,7 +130,24 @@ finish_session()
     if [[ -d "${session_dir}/bag" ]]; then
         ros2 bag info "${session_dir}/bag" >"${session_dir}/bag_info.txt" 2>&1 || true
     fi
-    info "Session saved in ${session_dir}"
+}
+
+# Fail if the recorder did not produce a closed bag: it stopped by itself with an error, or it
+# never wrote the bag metadata (written when the bag is closed).
+check_recording()
+{
+    local session_dir="$1"
+    local recorder_status="$2"
+    local stop_requested="$3"
+
+    if [[ "${stop_requested}" != "true" && "${recorder_status}" -ne 0 ]]; then
+        die "ros2 bag record stopped with exit status ${recorder_status} (see its messages" \
+            "above); session left in ${session_dir}"
+    fi
+    if [[ ! -f "${session_dir}/bag/metadata.yaml" ]]; then
+        die "No closed bag in ${session_dir}/bag (ros2 bag record exit status" \
+            "${recorder_status}): see its messages above."
+    fi
 }
 
 main()
@@ -141,9 +160,14 @@ main()
     vicon_configure_dds
     require_node_running
 
+    # Read before creating anything: a missing entry stops here
     local namespace=""
     namespace="$(read_config_param "${config_file}" namespace)"
     namespace="${namespace#/}"
+    local vicon_host=""
+    vicon_host="$(read_config_param "${config_file}" hostname)"
+    local stream_mode=""
+    stream_mode="$(read_config_param "${config_file}" stream_mode)"
 
     # One directory per session; never overwrite an existing one
     mkdir -p "${output_dir}"
@@ -162,7 +186,7 @@ main()
             cp "${extra_config}" "${session_dir}/config/"
         fi
     done
-    write_start_metadata "${session_dir}" "${namespace}"
+    write_start_metadata "${session_dir}" "${namespace}" "${vicon_host}" "${stream_mode}"
 
     info "Recording to ${session_dir}/bag (Ctrl+C to stop)"
     ros2 bag record -s mcap -o "${session_dir}/bag" \
@@ -172,7 +196,8 @@ main()
     # Ctrl+C (SIGINT) or SIGTERM stop the recording: the recorder gets SIGTERM, on which it
     # closes the bag cleanly. SIGINT is not forwarded because a recorder started by a script
     # in the background inherits SIGINT as ignored (POSIX), e.g. under a service manager.
-    trap 'kill -TERM "${recorder_pid}" 2>/dev/null || true' INT TERM
+    local stop_requested="false"
+    trap 'stop_requested="true"; kill -TERM "${recorder_pid}" 2>/dev/null || true' INT TERM
 
     # wait returns early when a trapped signal arrives: wait again until the recorder is done
     while kill -0 "${recorder_pid}" 2>/dev/null; do
@@ -180,7 +205,13 @@ main()
     done
     trap - INT TERM
 
+    # Exit status of the recorder (bash keeps it after the process has ended)
+    local recorder_status=0
+    wait "${recorder_pid}" || recorder_status=$?
+
     finish_session "${session_dir}"
+    check_recording "${session_dir}" "${recorder_status}" "${stop_requested}"
+    info "Session saved in ${session_dir}"
 }
 
 main "$@"

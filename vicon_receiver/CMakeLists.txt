@@ -233,7 +233,7 @@ if(BUILD_TESTING)
     )
     target_link_libraries(test_probe_core vicon_probe_core)
 
-    # Shared code: frame gaps, SDK names, acquisition clock (pure, no SDK library)
+    # Shared code: frame gaps, SDK names, acquisition clock, clock-rate check (pure, no SDK library)
     ament_add_gtest(test_common
       "${VICON_RECEIVER_CPP_TESTS_DIR}/test_frame_timing.cpp"
       "${VICON_RECEIVER_CPP_TESTS_DIR}/test_utilities.cpp"

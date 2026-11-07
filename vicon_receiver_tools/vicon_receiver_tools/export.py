@@ -199,6 +199,14 @@ class CsvExporter:
             handle_.close()
         return paths_
 
+    def abort(self) -> None:
+        """Close and delete the files written so far: a partial CSV would look complete."""
+        for handle_ in self._files.values():
+            handle_.close()
+            Path(handle_.name).unlink(missing_ok=True)
+        self._files.clear()
+        self._writers.clear()
+
 
 # -------------------------------------------------------------------------------------------------
 # HDF5
@@ -244,6 +252,9 @@ class Hdf5Exporter:
                     bool(marker_.occluded),
                     len(marker_.camera_ids),
                 )
+
+    def abort(self) -> None:
+        """Nothing to clean up: session.h5 is only written by finish()."""
 
     def finish(self, metadata: dict[str, str]) -> list[Path]:
         """Write session.h5 and return its path."""
@@ -345,12 +356,18 @@ def Export(session_dir: Path, formats: list[str], topic: str | None = None) -> t
     exporters_ = [EXPORTERS[format_](output_dir=output_dir_) for format_ in formats]
 
     count_ = 0
-    for frame_ in Read_vicon_frames(bag_dir_, topic_):
+    try:
+        for frame_ in Read_vicon_frames(bag_dir_, topic_):
+            for exporter_ in exporters_:
+                exporter_.add(frame_)
+            count_ += 1
+        if count_ == 0:
+            raise ExportError(f"no {topic_} messages in {bag_dir_}")
+    except BaseException:
+        # Reading stopped half-way (or Ctrl+C): leave no output that looks like a full export
         for exporter_ in exporters_:
-            exporter_.add(frame_)
-        count_ += 1
-    if count_ == 0:
-        raise ExportError(f"no {topic_} messages in {bag_dir_}")
+            exporter_.abort()
+        raise
 
     metadata_ = Session_metadata(session_dir)
     paths_: list[Path] = []

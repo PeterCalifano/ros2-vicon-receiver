@@ -194,10 +194,13 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
         )
 
     estimate_section_ = _Require(document_, "mount_estimate", dict, str(path))
+    top_markers_count_ = _Require(estimate_section_, "top_markers_count", int, "mount_estimate")
+    if top_markers_count_ < 0:
+        raise ConfigError(f"mount_estimate.top_markers_count must be >= 0, got {top_markers_count_}")
     mount_estimate_ = MountEstimateSettings(
         surface_offset_m=_Require(estimate_section_, "surface_offset_m", float, "mount_estimate"),
         top_markers_link=_Require(estimate_section_, "top_markers_link", str, "mount_estimate"),
-        top_markers_count=_Require(estimate_section_, "top_markers_count", int, "mount_estimate"),
+        top_markers_count=top_markers_count_,
     )
 
     return ViewerConfig(

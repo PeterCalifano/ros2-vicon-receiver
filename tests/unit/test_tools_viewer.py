@@ -17,7 +17,6 @@ from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
     COLOR_FEW,
     COLOR_GOOD,
-    COLOR_OCCLUDED,
     LatestFrameBuffer,
     ViewerFrame,
     ViewerMarker,
@@ -86,18 +85,25 @@ def test_occlusion_of_either_part_marks_the_segment() -> None:
     assert Viewer_frame_from_message(Make_message(occluded=True)).subjects[0].segments[0].occluded
 
 
+def test_zero_quaternion_without_flags_counts_as_occluded() -> None:
+    """An all-zero rotation (Vicon's occluded pose) is never drawn, even without the flags."""
+    message_ = Make_message()
+    message_.subjects[0].segments[0].orientation.w = 0.0
+    assert Viewer_frame_from_message(message_).subjects[0].segments[0].occluded
+
+
 # -------------------------------------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------------------------------------
-def test_marker_colors_by_visibility() -> None:
-    """Green with enough cameras, yellow with fewer, red when occluded."""
+def test_marker_colors_by_camera_count() -> None:
+    """Green with enough cameras, yellow with fewer (occluded markers are not drawn)."""
     markers_ = [
         ViewerMarker("a", np.zeros(3), camera_count=6, occluded=False),
         ViewerMarker("b", np.zeros(3), camera_count=2, occluded=False),
-        ViewerMarker("c", np.zeros(3), camera_count=0, occluded=True),
+        ViewerMarker("c", np.zeros(3), camera_count=4, occluded=False),
     ]
     colors_ = Marker_colors(markers_, good_camera_count=4)
-    assert [tuple(color_) for color_ in colors_] == [COLOR_GOOD, COLOR_FEW, COLOR_OCCLUDED]
+    assert [tuple(color_) for color_ in colors_] == [COLOR_GOOD, COLOR_FEW, COLOR_GOOD]
 
 
 def test_pose_matrix_round_trip() -> None:
@@ -145,7 +151,16 @@ def test_frame_buffer_keeps_latest_frame_and_bounded_trail() -> None:
     assert isinstance(latest_, ViewerFrame) and latest_.frame_number == 4
     trail_ = buffer_.trail("g1_unitree_torso_cam/seg")
     np.testing.assert_allclose(trail_[:, 0], [1.0, 3.0, 4.0])
-    assert buffer_.rate_hz() == pytest.approx(100.0)
+    assert buffer_.rate_hz(now_s=0.045) == pytest.approx(100.0)
+
+
+def test_frame_buffer_rate_falls_to_zero_when_the_stream_stops() -> None:
+    """No frame for longer than the rate window: the displayed rate is 0, not the last value."""
+    buffer_ = LatestFrameBuffer(trail_length=3)
+    for index_ in range(50):
+        buffer_.put_message(Make_message(), receive_time_s=float(index_) * 0.01)
+    assert buffer_.rate_hz(now_s=0.5) == pytest.approx(100.0)
+    assert buffer_.rate_hz(now_s=5.0) == 0.0
 
 
 def test_frame_buffer_without_frames() -> None:
@@ -185,6 +200,15 @@ def test_viewer_config_rejects_non_positive_rate(tmp_path: Path) -> None:
     config_ = tmp_path / "viewer.yaml"
     config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"viewer\.update_rate_hz must be > 0"):
+        Load_viewer_config(config_)
+
+
+def test_viewer_config_rejects_negative_top_marker_count(tmp_path: Path) -> None:
+    """The number of markers constrained to the top link cannot be negative (0: no constraint)."""
+    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("top_markers_count: 2", "top_markers_count: -1")
+    config_ = tmp_path / "viewer.yaml"
+    config_.write_text(text_, encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"top_markers_count must be >= 0"):
         Load_viewer_config(config_)
 
 

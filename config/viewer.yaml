@@ -29,7 +29,8 @@ viewer:
   marker_radius_m: 0.007
 
   # Marker colours by number of cameras that saw the marker in the frame:
-  # >= good_camera_count: green, >= 1: yellow, occluded: red.
+  # >= good_camera_count: green, fewer (or unknown without ray data): yellow.
+  # Occluded markers are not drawn (Vicon sends no position for them).
   good_camera_count: 4
 
 robot:

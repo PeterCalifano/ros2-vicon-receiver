@@ -1,7 +1,8 @@
 /**
  * @file test_frame_timing.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
- * @brief Unit tests of frame_timing.hpp: acquisition time, dropped/stale frames.
+ * @brief Unit tests of frame_timing.hpp: acquisition time, dropped/stale frames, leftover frames,
+ *        local clock rate.
  * @version 0.1
  * @date 2026-11-07
  */
@@ -12,6 +13,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <vector>
@@ -378,3 +380,327 @@ namespace dropped_frame_counter_tests
         EXPECT_TRUE(vicon_receiver::is_stale_previous_frame(18469, 0.01, 100.0, 500, 1.0));
     }
 } // namespace dropped_frame_counter_tests
+
+// =================================================================================================
+// Frames left over from the server's previous session
+// =================================================================================================
+namespace startup_leftover_frame_filter_tests
+{
+    // ---------------------------------------------------------------------------------------------
+    // StartupLeftoverFrameFilter: frames left over from the previous session are held back
+    // ---------------------------------------------------------------------------------------------
+
+    using vicon_receiver::StartupLeftoverFrameFilter;
+
+    namespace
+    {
+        /// Frame rate of the live recordings [Hz].
+        constexpr double kFilterRateHz = 100.0;
+
+        /// Run length used by the node.
+        constexpr std::uint64_t kConfirmationFrames = 3;
+    } // namespace
+
+    TEST(StartupLeftoverFrameFilter, NeedsARunOfAtLeastTwo)
+    {
+        EXPECT_THROW(StartupLeftoverFrameFilter(1), std::invalid_argument);
+        EXPECT_NO_THROW(StartupLeftoverFrameFilter(2));
+    }
+
+    TEST(StartupLeftoverFrameFilter, OneLeftoverFrame)
+    {
+        // Live case (b2b.json, receive times relative to the first frame): leftover 1985661, then
+        // the live stream from 1985710
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(1985661, 0.0, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(1985710, 0.0001, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(1985711, 0.0035, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(1985712, 0.0134, kFilterRateHz));
+        EXPECT_TRUE(filter.confirmed());
+        EXPECT_EQ(filter.rejected(), 3u);
+    }
+
+    TEST(StartupLeftoverFrameFilter, TwoLeftoverFrames)
+    {
+        // Live case (b2b_ServerPush.json): leftovers 1976227 and 1976234, live from 1976277
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(1976227, 0.0, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(1976234, 0.0001, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(1976277, 0.0024, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(1976278, 0.0123, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(1976279, 0.0230, kFilterRateHz));
+        EXPECT_EQ(filter.rejected(), 4u);
+    }
+
+    TEST(StartupLeftoverFrameFilter, ConsecutiveLeftoversOfAStoppedTrackerAreNeverConfirmed)
+    {
+        // Live case (2026-10-30, Tracker not streaming): leftovers 2175488 and 2175489 back to back,
+        // then nothing. Even a third consecutive leftover arriving back to back is not live.
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(2175488, 0.0, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(2175489, 0.0001, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(2175490, 0.0002, kFilterRateHz));
+        EXPECT_FALSE(filter.confirmed());
+    }
+
+    TEST(StartupLeftoverFrameFilter, BurstAtStartIsConfirmedOnceFramesFollowAtTheRate)
+    {
+        // Three frames queued while connecting arrive together, then live frames every 10 ms
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(500, 0.0, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(501, 0.0001, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(502, 0.0002, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(503, 0.0100, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(504, 0.0210, kFilterRateHz));
+    }
+
+    TEST(StartupLeftoverFrameFilter, UnknownRateChecksFrameNumbersOnly)
+    {
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(10, 0.0, 0.0));
+        EXPECT_FALSE(filter.accept(11, 0.0, 0.0));
+        EXPECT_TRUE(filter.accept(12, 0.0, 0.0));
+    }
+
+    TEST(StartupLeftoverFrameFilter, ConfirmedStreamAcceptsGapsAndRestarts)
+    {
+        // Once live, dropped frames and server restarts are handled by the gap tracker, not here
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        filter.accept(100, 0.00, kFilterRateHz);
+        filter.accept(101, 0.01, kFilterRateHz);
+        filter.accept(102, 0.02, kFilterRateHz);
+        EXPECT_TRUE(filter.accept(150, 0.03, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(3, 0.04, kFilterRateHz));
+    }
+
+    TEST(StartupLeftoverFrameFilter, RestartHoldsBackFramesAgain)
+    {
+        // After a reconnection the server may send leftovers again
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        filter.accept(100, 0.00, kFilterRateHz);
+        filter.accept(101, 0.01, kFilterRateHz);
+        filter.accept(102, 0.02, kFilterRateHz);
+        filter.restart();
+        EXPECT_FALSE(filter.confirmed());
+        EXPECT_EQ(filter.rejected(), 0u);
+        EXPECT_FALSE(filter.accept(102, 5.00, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(103, 5.01, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(104, 5.02, kFilterRateHz));
+    }
+} // namespace startup_leftover_frame_filter_tests
+
+// =================================================================================================
+// Rate of the local clock
+// =================================================================================================
+namespace local_clock_rate_monitor_tests
+{
+    using vicon_receiver::LocalClockRateMonitor;
+
+    namespace
+    {
+        /// Frame rate of the synthetic stream [Hz] (as in the live recording).
+        constexpr double kRateHz = 100.0;
+
+        /// Measurement and block durations used by the node [s].
+        constexpr double kMeasurementS = 10.0;
+        constexpr double kBlockS = 1.0;
+
+        /// First frame number (magnitude seen on a live Tracker).
+        constexpr std::uint64_t kFirstFrame = 1958072;
+
+        /// Monotonic local time of the first frame [s].
+        constexpr double kStartS = 5000.0;
+
+        /**
+     * @brief Feed frames to the check and collect the rate errors it reports.
+     *
+     * @param check        Check under test.
+     * @param frame_count  Number of consecutive frames.
+     * @param rate_error   Rate error of the local clock (0.042: 4.2 % fast).
+     * @param delay        Transport delay of each frame [s], as a function of its index.
+     */
+        template <typename DelayFunction>
+        std::vector<double> run_stream(LocalClockRateMonitor &check,
+                                       std::uint64_t frame_count,
+                                       double rate_error,
+                                       DelayFunction delay)
+        {
+            std::vector<double> errors;
+            for (std::uint64_t index = 0; index < frame_count; ++index)
+            {
+                const double vicon_time_s = static_cast<double>(index) / kRateHz;
+                const double local_time_s =
+                    kStartS + (1.0 + rate_error) * vicon_time_s + delay(index);
+                const std::optional<double> error =
+                    check.add_frame(kFirstFrame + index, kRateHz, local_time_s);
+                if (error.has_value())
+                {
+                    errors.push_back(error.value());
+                }
+            }
+            return errors;
+        }
+    } // namespace
+
+    // ---------------------------------------------------------------------------------------------
+    // Construction
+    // ---------------------------------------------------------------------------------------------
+
+    TEST(LocalClockRateMonitor, RejectsInvalidDurations)
+    {
+        EXPECT_THROW(LocalClockRateMonitor(10.0, 0.0), std::invalid_argument);
+        EXPECT_THROW(LocalClockRateMonitor(2.0, 1.0), std::invalid_argument);
+        EXPECT_NO_THROW(LocalClockRateMonitor(kMeasurementS, kBlockS));
+    }
+
+    TEST(LocalClockRateMonitor, RejectsInvalidRate)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        EXPECT_THROW(check.add_frame(kFirstFrame, 0.0, kStartS), std::invalid_argument);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Measurements
+    // ---------------------------------------------------------------------------------------------
+
+    TEST(LocalClockRateMonitor, NothingBeforeTheEndOfAMeasurement)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        const std::vector<double> errors =
+            run_stream(check, 900, 0.0, [](std::uint64_t) { return 0.005; });
+        EXPECT_TRUE(errors.empty());
+    }
+
+    TEST(LocalClockRateMonitor, HealthyClockWithArrivalJitterAgrees)
+    {
+        // Jitter up to 10 ms on every frame (as measured live): far below the 1 % warning level
+        std::mt19937 generator(7);
+        std::uniform_real_distribution<double> jitter(0.0, 0.010);
+        std::vector<double> delays(2500);
+        for (double &delay : delays)
+        {
+            delay = 0.002 + jitter(generator);
+        }
+
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        const std::vector<double> errors = run_stream(
+            check, delays.size(), 0.0, [&](std::uint64_t index) { return delays[index]; });
+        ASSERT_EQ(errors.size(), 2u);
+        for (const double error : errors)
+        {
+            EXPECT_NEAR(error, 0.0, 0.001);
+        }
+    }
+
+    TEST(LocalClockRateMonitor, FastLocalClockIsMeasured)
+    {
+        // Measured on WSL with the 'tsc' clocksource: the local clock runs 4.2 % fast
+        std::mt19937 generator(11);
+        std::uniform_real_distribution<double> jitter(0.0, 0.010);
+        std::vector<double> delays(1100);
+        for (double &delay : delays)
+        {
+            delay = jitter(generator);
+        }
+
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        const std::vector<double> errors = run_stream(
+            check, delays.size(), 0.042, [&](std::uint64_t index) { return delays[index]; });
+        ASSERT_EQ(errors.size(), 1u);
+        EXPECT_NEAR(errors.front(), 0.042, 0.001);
+    }
+
+    TEST(LocalClockRateMonitor, SlowLocalClockIsNegative)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        const std::vector<double> errors =
+            run_stream(check, 1100, -0.02, [](std::uint64_t) { return 0.003; });
+        ASSERT_EQ(errors.size(), 1u);
+        EXPECT_NEAR(errors.front(), -0.02, 1e-6);
+    }
+
+    TEST(LocalClockRateMonitor, NetworkStallInTheMiddleDoesNotBias)
+    {
+        // 0.5 s stall: frames 400-449 queue up and arrive in a burst when the network recovers
+        auto delay = [](std::uint64_t index)
+        {
+            if (index >= 400 && index < 450)
+            {
+                return 0.003 + 0.5 - static_cast<double>(index - 400) / kRateHz;
+            }
+            return 0.003;
+        };
+
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        const std::vector<double> errors = run_stream(check, 1100, 0.0, delay);
+        ASSERT_EQ(errors.size(), 1u);
+        EXPECT_NEAR(errors.front(), 0.0, 1e-6);
+        EXPECT_EQ(check.restarts(), 0u);
+    }
+
+    TEST(LocalClockRateMonitor, DroppedFramesDoNotMatter)
+    {
+        // Only every third frame received: the frame numbers still give the Vicon time
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        std::vector<double> errors;
+        for (std::uint64_t index = 0; index < 1200; index += 3)
+        {
+            const double local_time_s =
+                kStartS + 1.01 * static_cast<double>(index) / kRateHz + 0.004;
+            const std::optional<double> error =
+                check.add_frame(kFirstFrame + index, kRateHz, local_time_s);
+            if (error.has_value())
+            {
+                errors.push_back(error.value());
+            }
+        }
+        ASSERT_EQ(errors.size(), 1u);
+        EXPECT_NEAR(errors.front(), 0.01, 1e-6);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Broken timelines
+    // ---------------------------------------------------------------------------------------------
+
+    TEST(LocalClockRateMonitor, NonIncreasingFrameNumberRestartsTheMeasurement)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        run_stream(check, 900, 0.0, [](std::uint64_t) { return 0.003; });
+
+        // Server restarted: frame numbers start again lower, 9 s of measurement are dropped
+        EXPECT_FALSE(check.add_frame(10, kRateHz, kStartS + 9.01).has_value());
+        EXPECT_EQ(check.restarts(), 1u);
+        EXPECT_FALSE(check.add_frame(11, kRateHz, kStartS + 9.02).has_value());
+    }
+
+    TEST(LocalClockRateMonitor, PauseLongerThanABlockRestartsTheMeasurement)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        run_stream(check, 500, 0.0, [](std::uint64_t) { return 0.003; });
+
+        // Tracker paused for 3 s
+        EXPECT_FALSE(check.add_frame(kFirstFrame + 500, kRateHz, kStartS + 8.0).has_value());
+        EXPECT_EQ(check.restarts(), 1u);
+    }
+
+    TEST(LocalClockRateMonitor, RateChangeRestartsTheMeasurement)
+    {
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        run_stream(check, 500, 0.0, [](std::uint64_t) { return 0.003; });
+        EXPECT_FALSE(check.add_frame(kFirstFrame + 500, 200.0, kStartS + 5.0).has_value());
+        EXPECT_EQ(check.restarts(), 1u);
+    }
+
+    TEST(LocalClockRateMonitor, RestartDropsTheMeasurement)
+    {
+        // As after a reconnection: nothing is reported until a full new measurement
+        LocalClockRateMonitor check(kMeasurementS, kBlockS);
+        run_stream(check, 900, 0.0, [](std::uint64_t) { return 0.003; });
+        check.restart();
+        for (std::uint64_t index = 900; index < 1100; ++index)
+        {
+            const double local_time_s = kStartS + static_cast<double>(index) / kRateHz;
+            EXPECT_FALSE(check.add_frame(kFirstFrame + index, kRateHz, local_time_s).has_value());
+        }
+    }
+} // namespace local_clock_rate_monitor_tests

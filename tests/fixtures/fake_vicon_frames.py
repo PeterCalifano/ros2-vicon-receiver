@@ -4,14 +4,15 @@ Used by tests/integration/test_record_export.py to test recording and export wit
 system. The node is called vicon_client (scripts/record.sh checks that it runs) and publishes on
 /vicon/frame a known pattern:
 
-- frame numbers from FIRST_FRAME_NUMBER, consecutive, except a jump of DROPPED_FRAMES + 1 at
-  frame index DROP_AT_INDEX (frames_dropped = DROPPED_FRAMES);
+- frame numbers from FIRST_FRAME_NUMBER, consecutive, except a jump of DROPPED_FRAMES + 1 every
+  DROP_PERIOD published frames (frames_dropped = DROPPED_FRAMES), so that any recording of more
+  than DROP_PERIOD frames contains a gap whenever it starts;
 - one subject "test-body" with one segment moving along x by 1 mm per frame number;
 - the segment is occluded (all-zero pose, flags set) when the frame number is a multiple of
   OCCLUSION_PERIOD;
 - three markers seen by 3, 4 and 5 cameras, occluded with the segment.
 
-Usage: python3 fake_vicon_frames.py --duration SECONDS [--rate HZ]
+Usage: python3 fake_vicon_frames.py --duration SECONDS [--rate HZ]   (SIGINT/SIGTERM stop it)
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from builtin_interfaces.msg import Time
 from vicon_receiver_msgs.msg import MarkerState, SegmentState, SubjectState, ViconFrame
 
 FIRST_FRAME_NUMBER: int = 1000
-DROP_AT_INDEX: int = 400
+DROP_PERIOD: int = 300
 DROPPED_FRAMES: int = 3
 OCCLUSION_PERIOD: int = 50
 LATENCY_S: float = 0.030
@@ -34,13 +35,17 @@ LATENCY_S: float = 0.030
 def To_time(seconds: float) -> Time:
     """builtin_interfaces/Time from seconds."""
     whole_ = int(seconds)
-    return Time(sec=whole_, nanosec=int(round((seconds - whole_) * 1e9)) % 1_000_000_000)
+    nanosec_ = int(round((seconds - whole_) * 1e9))
+    # A fraction rounded up to a full second carries into the seconds
+    if nanosec_ >= 1_000_000_000:
+        whole_ += 1
+        nanosec_ -= 1_000_000_000
+    return Time(sec=whole_, nanosec=nanosec_)
 
 
 def Frame_number(index: int) -> int:
-    """Frame number of the index-th published frame (with the injected gap)."""
-    gap_ = DROPPED_FRAMES if index >= DROP_AT_INDEX else 0
-    return FIRST_FRAME_NUMBER + index + gap_
+    """Frame number of the index-th published frame (with the injected gaps)."""
+    return FIRST_FRAME_NUMBER + index + DROPPED_FRAMES * (index // DROP_PERIOD)
 
 
 def Make_frame(index: int, now_s: float) -> ViconFrame:
@@ -78,7 +83,7 @@ def Make_frame(index: int, now_s: float) -> ViconFrame:
     frame_.header.stamp = To_time(now_s - LATENCY_S)
     frame_.receive_stamp = To_time(now_s)
     frame_.frame_number = frame_number_
-    frame_.frames_dropped = DROPPED_FRAMES if index == DROP_AT_INDEX else 0
+    frame_.frames_dropped = DROPPED_FRAMES if index > 0 and index % DROP_PERIOD == 0 else 0
     frame_.frame_rate_hz = 100.0
     frame_.latency_total_s = LATENCY_S
     frame_.latency_stage_names = ["Data Delivered"]
@@ -101,7 +106,8 @@ def Main(argv: list[str]) -> int:
     period_s_ = 1.0 / arguments_.rate
     start_ = time.monotonic()
     index_ = 0
-    while time.monotonic() - start_ < arguments_.duration:
+    # rclpy turns SIGINT/SIGTERM into a shutdown: stop publishing then
+    while rclpy.ok() and time.monotonic() - start_ < arguments_.duration:
         publisher_.publish(Make_frame(index_, time.time()))
         index_ += 1
         # Keep the rate on average, whatever the time spent publishing
@@ -111,7 +117,7 @@ def Main(argv: list[str]) -> int:
 
     print(f"published {index_} frames")
     node_.destroy_node()
-    rclpy.shutdown()
+    rclpy.try_shutdown()
     return 0
 
 

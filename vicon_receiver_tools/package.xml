@@ -5,12 +5,23 @@
   <version>0.1.0</version>
   <description>
     Python tools of the vicon_receiver repository: access to the node parameters file and network
-    diagnostics used by the scripts in scripts/.
+    diagnostics used by the scripts in scripts/, the live viewer, the mount estimate and the export
+    of recorded sessions.
   </description>
   <maintainer email="petercalifano.gs@gmail.com">PeterC</maintainer>
   <license>GNU General Public License v3.0</license>
 
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+
+  <!-- Live viewer (ViconFrame subscription) and export (MCAP sessions of scripts/record.sh) -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>vicon_receiver_msgs</exec_depend>
+  <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <!-- ros2 bag record, used by scripts/record.sh -->
+  <exec_depend>ros2bag</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

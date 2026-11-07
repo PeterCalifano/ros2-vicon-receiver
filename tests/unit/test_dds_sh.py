@@ -39,17 +39,19 @@ def Run_dds(
     route: str,
     lo_addresses: str = LO_WITH_WSL_ADDRESS,
     preset_profile: str | None = None,
+    preset_variable: str = "FASTRTPS_DEFAULT_PROFILES_FILE",
 ):
     """Run a snippet with dds.sh sourced and the fake network state; return the process."""
     environment_ = {
         "FAKE_IP_ROUTE_OUTPUT": route,
         "FAKE_IP_LO_ADDR_OUTPUT": lo_addresses,
     }
-    # Start from a clean state unless the test sets a profile on purpose
-    unset_ = "unset FASTRTPS_DEFAULT_PROFILES_FILE FASTDDS_DEFAULT_PROFILES_FILE; "
+    # Start from a clean state; a test may set one of the two profile variables on purpose
+    variables_ = ["FASTRTPS_DEFAULT_PROFILES_FILE", "FASTDDS_DEFAULT_PROFILES_FILE"]
     if preset_profile is not None:
-        environment_["FASTRTPS_DEFAULT_PROFILES_FILE"] = preset_profile
-        unset_ = ""
+        environment_[preset_variable] = preset_profile
+        variables_.remove(preset_variable)
+    unset_ = f"unset {' '.join(variables_)}; "
     script_ = f'{unset_}source "{DDS_SH}"; {snippet}'
     return shell.run_common(script_, extra_env=environment_, use_fake_bin=True)
 
@@ -139,6 +141,20 @@ def test_configure_keeps_profile_set_by_user(shell: ShellRunner) -> None:
     )
     assert "FASTRTPS=/home/user/my_profile.xml" in result_.stdout
     assert "Keeping the Fast DDS profile already set" in result_.stdout
+
+
+def test_configure_keeps_fast_dds_3_profile_set_by_user(shell: ShellRunner) -> None:
+    """The Fast DDS 3.x variable alone also counts as a profile chosen by the user."""
+    result_ = Run_dds(
+        shell,
+        PRINT_PROFILES,
+        ROUTE_WSL_MIRRORED,
+        preset_profile="/home/user/my_profile.xml",
+        preset_variable="FASTDDS_DEFAULT_PROFILES_FILE",
+    )
+    assert "FASTDDS=/home/user/my_profile.xml" in result_.stdout
+    assert "FASTRTPS=unset" in result_.stdout
+    assert "Keeping the Fast DDS profile already set: /home/user/my_profile.xml" in result_.stdout
 
 
 def test_configure_warns_without_wsl_loopback_address(shell: ShellRunner) -> None:

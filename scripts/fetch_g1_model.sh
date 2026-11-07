@@ -85,7 +85,8 @@ main()
     mkdir -p "${directory}"
 
     info "Copying ${source} to ${directory}"
-    if ! rsync -a --info=stats1 "${source}" "${directory}/"; then
+    # Trailing slash on the source: copy its content, not the directory itself
+    if ! rsync -a --info=stats1 "${source%/}/" "${directory}/"; then
         die "rsync from ${source} failed." \
             "Check that ssh to the host works without a password prompt (ssh-agent, key)."
     fi
