@@ -18,7 +18,13 @@ from typing import Any
 
 import pytest
 
-from conftest import DEFAULT_TIMEOUT_S, PROBE_EXECUTABLE, ShellRunner, TcpListener
+from conftest import (
+    DEFAULT_TIMEOUT_S,
+    PROBE_EXECUTABLE,
+    Load_default_parameters,
+    ShellRunner,
+    TcpListener,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -70,7 +76,10 @@ def test_probe_requires_host(ros_env: dict[str, str]) -> None:
 def test_probe_rejects_unwritable_output(ros_env: dict[str, str], tmp_path: Path) -> None:
     """An output file that cannot be created is reported before connecting."""
     output_ = tmp_path / "missing_dir" / "recording.json"
-    result_ = Run_probe(["--host", "127.0.0.1", "--frames", "1", "--json", str(output_)], ros_env)
+    result_ = Run_probe(
+        ["--host", "127.0.0.1", "--frames", "1", "--stream-mode", "ServerPush", "--json", str(output_)],
+        ros_env,
+    )
     assert result_.returncode == EXIT_OUTPUT_ERROR
     assert f"cannot open '{output_}'" in result_.stderr
     assert "Connecting" not in result_.stdout
@@ -90,6 +99,8 @@ def test_probe_non_vicon_server_fails_with_sdk_result(
             tcp_listener.host_spec,
             "--frames",
             "3",
+            "--stream-mode",
+            "ClientPull",
             "--timeout-ms",
             "500",
             "--json",
@@ -104,6 +115,7 @@ def test_probe_non_vicon_server_fails_with_sdk_result(
     recording_ = Load_recording(output_)
     assert recording_["probe"]["host"] == tcp_listener.host_spec
     assert recording_["probe"]["requested_frames"] == 3
+    assert recording_["probe"]["stream_mode"] == "ClientPull"
     assert recording_["connection"]["result"] == "ClientConnectionFailed"
     assert recording_["connection"]["timeout_ms"] == 500
     assert "frames" not in recording_
@@ -138,7 +150,31 @@ def test_probe_sh_passes_options_to_probe(
 
     recording_ = Load_recording(output_)
     assert recording_["probe"]["requested_frames"] == 7
+    # Without --stream-mode, the mode of the parameters file is used
+    assert recording_["probe"]["stream_mode"] == Load_default_parameters()["stream_mode"]
     assert recording_["connection"]["timeout_ms"] == 300
+
+
+def test_probe_sh_stream_mode_option(
+    shell: ShellRunner, tcp_listener: TcpListener, tmp_path: Path
+) -> None:
+    """--stream-mode overrides the mode of the parameters file."""
+    output_ = tmp_path / "recording.json"
+    result_ = shell.run_script(
+        "probe.sh",
+        ["--host", tcp_listener.host_spec, "--stream-mode", "ClientPullPreFetch", "-n", "1",
+         "--timeout-ms", "300", "-o", str(output_)],
+    )
+    assert result_.returncode == EXIT_CONNECTION_FAILED
+    assert "(ClientPullPreFetch)" in result_.stdout
+    assert Load_recording(output_)["probe"]["stream_mode"] == "ClientPullPreFetch"
+
+
+def test_probe_requires_stream_mode(ros_env: dict[str, str]) -> None:
+    """vicon_probe has no default stream mode."""
+    result_ = Run_probe(["--host", "127.0.0.1", "--frames", "1"], ros_env)
+    assert result_.returncode == EXIT_INVALID_ARGUMENTS
+    assert "--stream-mode is required" in result_.stderr
 
 
 def test_probe_sh_reads_host_from_config(
@@ -158,7 +194,8 @@ def test_probe_sh_reads_host_from_config(
 # Real Vicon server (opt-in)
 # -------------------------------------------------------------------------------------------------
 @pytest.mark.vicon_live
-def test_probe_records_live_frames(shell: ShellRunner, tmp_path: Path) -> None:
+@pytest.mark.parametrize("stream_mode", ["ServerPush", "ClientPull"])
+def test_probe_records_live_frames(shell: ShellRunner, tmp_path: Path, stream_mode: str) -> None:
     """Record a few frames from a real server and check the structure of the recording."""
     live_host_ = os.environ.get("VICON_LIVE_HOST")
     if not live_host_:
@@ -167,12 +204,14 @@ def test_probe_records_live_frames(shell: ShellRunner, tmp_path: Path) -> None:
     frame_count_ = 20
     output_ = tmp_path / "live.json"
     result_ = shell.run_script(
-        "probe.sh", ["--host", live_host_, "-n", str(frame_count_), "-o", str(output_)]
+        "probe.sh",
+        ["--host", live_host_, "--stream-mode", stream_mode, "-n", str(frame_count_), "-o", str(output_)],
     )
     assert result_.returncode == 0, result_.stdout + result_.stderr
 
     recording_ = Load_recording(output_)
     assert recording_["connection"]["result"] == "Success"
+    assert recording_["stream"]["mode"] == stream_mode
     assert len(recording_["frames"]) == frame_count_
     assert recording_["summary"]["frames_recorded"] == frame_count_
 

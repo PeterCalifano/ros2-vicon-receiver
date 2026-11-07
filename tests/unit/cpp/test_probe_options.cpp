@@ -45,10 +45,12 @@ namespace
 
 TEST(ProbeOptions, RequiredOptionsOnly)
 {
-    const ProbeOptions options = parse_probe_options({"--host", "192.168.10.1", "--frames", "100"});
+    const ProbeOptions options = parse_probe_options(
+        {"--host", "192.168.10.1", "--frames", "100", "--stream-mode", "ServerPush"});
 
     EXPECT_EQ(options.host, "192.168.10.1");
     EXPECT_EQ(options.frame_count, 100u);
+    EXPECT_EQ(options.stream_mode, ViconDataStreamSDK::CPP::StreamMode::ServerPush);
     EXPECT_TRUE(options.json_path.empty());
     EXPECT_FALSE(options.connection_timeout_ms.has_value());
     EXPECT_FALSE(options.include_centroids);
@@ -65,7 +67,9 @@ TEST(ProbeOptions, AllOptionsInAnyOrder)
                                                       "--timeout-ms",
                                                       "500",
                                                       "--host",
-                                                      "10.250.223.40:801"});
+                                                      "10.250.223.40:801",
+                                                      "--stream-mode",
+                                                      "ClientPullPreFetch"});
 
     EXPECT_EQ(options.host, "10.250.223.40:801");
     EXPECT_EQ(options.frame_count, 5u);
@@ -73,6 +77,7 @@ TEST(ProbeOptions, AllOptionsInAnyOrder)
     ASSERT_TRUE(options.connection_timeout_ms.has_value());
     EXPECT_EQ(options.connection_timeout_ms.value(), 500u);
     EXPECT_TRUE(options.include_centroids);
+    EXPECT_EQ(options.stream_mode, ViconDataStreamSDK::CPP::StreamMode::ClientPullPreFetch);
 }
 
 TEST(ProbeOptions, HelpNeedsNoOtherOption)
@@ -83,8 +88,8 @@ TEST(ProbeOptions, HelpNeedsNoOtherOption)
 
 TEST(ProbeOptions, MinimumTimeoutIsAccepted)
 {
-    const ProbeOptions options =
-        parse_probe_options({"--host", "h", "--frames", "1", "--timeout-ms", "10"});
+    const ProbeOptions options = parse_probe_options(
+        {"--host", "h", "--frames", "1", "--timeout-ms", "10", "--stream-mode", "ClientPull"});
     EXPECT_EQ(options.connection_timeout_ms.value(), vicon_probe::kMinConnectionTimeoutMs);
 }
 
@@ -101,6 +106,19 @@ TEST(ProbeOptions, FramesAreRequired)
 {
     // No hidden default number of frames
     EXPECT_EQ(parse_error({"--host", "192.168.10.1"}), "--frames is required");
+}
+
+TEST(ProbeOptions, StreamModeIsRequired)
+{
+    // No hidden default: the probe must say which mode it measures
+    EXPECT_EQ(parse_error({"--host", "h", "--frames", "10"}), "--stream-mode is required");
+}
+
+TEST(ProbeOptions, UnknownStreamModeIsRejected)
+{
+    const std::string message =
+        parse_error({"--host", "h", "--frames", "1", "--stream-mode", "Push"});
+    EXPECT_NE(message.find("unknown stream mode 'Push'"), std::string::npos) << message;
 }
 
 TEST(ProbeOptions, OptionWithoutValue)
@@ -141,7 +159,7 @@ TEST(ProbeOptions, UsageListsEveryOption)
 {
     const std::string usage = vicon_probe::probe_usage("vicon_probe");
     for (const char *option :
-         {"--host", "--frames", "--json", "--timeout-ms", "--centroids", "--help"})
+         {"--host", "--frames", "--stream-mode", "--json", "--timeout-ms", "--centroids", "--help"})
     {
         EXPECT_NE(usage.find(option), std::string::npos) << option;
     }

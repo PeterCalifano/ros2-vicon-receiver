@@ -156,6 +156,7 @@ namespace vicon_receiver
         std::uint64_t missed_ = 0;
         std::uint64_t discontinuities_ = 0;
     };
+
     /**
      * @brief Whether a forward jump of the frame number cannot be made of dropped frames.
      *
@@ -172,6 +173,32 @@ namespace vicon_receiver
                                    double receive_interval_s,
                                    double frame_rate_hz,
                                    double margin_s);
+
+    /// Frames after connecting during which any frame-number jump is taken as stale leftovers.
+    constexpr std::uint64_t kConnectionStartupFrames = 10;
+
+    /**
+     * @brief Whether the previous frame was stale, i.e. the frame-number jump to the current one
+     *        is not made of dropped frames.
+     *
+     * After connecting, a Vicon server first sends one or two frames left over from its previous
+     * session (observed live). So:
+     * - within the first kConnectionStartupFrames frames after connecting, any forward jump
+     *   means that the frames before it were stale (even if the previous session ended a
+     *   fraction of a second ago); a real drop there is not counted;
+     * - later, a jump is stale only if it is implausible (is_implausible_frame_jump()).
+     *
+     * @param frames_missing         Frames missing between the previous and the current frame.
+     * @param receive_interval_s     Local time between the two frames [s].
+     * @param frame_rate_hz          Frame rate reported by the server [Hz].
+     * @param frames_before_current  Frames received since connecting, before the current one.
+     * @param margin_s               Tolerance of the plausibility check [s].
+     */
+    bool is_stale_previous_frame(std::uint64_t frames_missing,
+                                 double receive_interval_s,
+                                 double frame_rate_hz,
+                                 std::uint64_t frames_before_current,
+                                 double margin_s);
 } // namespace vicon_receiver
 
 #endif // VICON_RECEIVER_FRAME_TIMING_HPP

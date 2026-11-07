@@ -13,15 +13,21 @@
 #include <string>
 #include <vector>
 
+#include "vicon-datastream-sdk/DataStreamClient.h"
+
 namespace vicon_probe
 {
     /// Minimum connection timeout accepted by the Vicon SDK [ms].
     constexpr unsigned int kMinConnectionTimeoutMs = 10;
 
-    /// Options of one probe run. There are no hidden defaults: host and frame count are required.
+    /// Options of one probe run. There are no hidden defaults: host, frame count and stream mode
+    /// are required.
     struct ProbeOptions
     {
-        std::string host;               ///< DataStream server as "host[:port]"
+        std::string host; ///< DataStream server as "host[:port]"
+        /// SDK stream mode (as the node's stream_mode parameter)
+        ViconDataStreamSDK::CPP::StreamMode::Enum stream_mode =
+            ViconDataStreamSDK::CPP::StreamMode::ClientPull;
         unsigned int frame_count = 0;   ///< Number of frames to record
         std::string json_path;          ///< Output JSON file; empty: no JSON output
         bool include_centroids = false; ///< Also record the 2D camera centroids (heavy)

@@ -11,6 +11,8 @@
 #include <limits>
 #include <stdexcept>
 
+#include "vicon_receiver/utilities.hpp"
+
 namespace vicon_probe
 {
     namespace
@@ -72,6 +74,7 @@ namespace vicon_probe
     {
         ProbeOptions options;
         bool frames_given = false;
+        bool stream_mode_given = false;
 
         for (std::size_t index = 0; index < arguments.size(); ++index)
         {
@@ -89,6 +92,13 @@ namespace vicon_probe
             {
                 options.frame_count = parse_unsigned(argument, take_value(arguments, index), 1);
                 frames_given = true;
+            }
+            else if (argument == "--stream-mode")
+            {
+                // Same names as the node parameter: ServerPush, ClientPull, ClientPullPreFetch
+                options.stream_mode =
+                    vicon_receiver::stream_mode_from_name(take_value(arguments, index));
+                stream_mode_given = true;
             }
             else if (argument == "--json")
             {
@@ -123,13 +133,17 @@ namespace vicon_probe
         {
             throw std::invalid_argument("--frames is required");
         }
+        if (!stream_mode_given)
+        {
+            throw std::invalid_argument("--stream-mode is required");
+        }
         return options;
     }
 
     std::string probe_usage(const std::string &program_name)
     {
         return "Usage: " + program_name +
-               " --host HOST[:PORT] --frames N [options]\n"
+               " --host HOST[:PORT] --frames N --stream-mode MODE [options]\n"
                "\n"
                "Connect once to a Vicon DataStream server, record N frames of everything it\n"
                "streams (subjects, segments, markers, quality, occlusion, latency, cameras) and\n"
@@ -138,6 +152,8 @@ namespace vicon_probe
                "Options:\n"
                "  --host HOST[:PORT]  DataStream server (port 801 if omitted)\n"
                "  --frames N          Number of frames to record (>= 1)\n"
+               "  --stream-mode MODE  ServerPush, ClientPull or ClientPullPreFetch (as the\n"
+               "                      node's stream_mode parameter)\n"
                "  --json FILE         Write the recording as JSON to FILE\n"
                "  --timeout-ms MS     Connection timeout (>= 10; SDK default: 5000)\n"
                "  --centroids         Also record the 2D centroids of every camera (heavy)\n"

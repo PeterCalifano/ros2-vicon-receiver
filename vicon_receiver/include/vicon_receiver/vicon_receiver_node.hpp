@@ -99,6 +99,8 @@ class ViconReceiverNode : public rclcpp::Node
     std::chrono::steady_clock::time_point status_period_start;
     /// Whether the local clock check runs (not in the first status period after starting)
     bool clock_check_armed = false;
+    /// Frames received since the last (re)connection (detects a stale first frame)
+    std::uint64_t frames_since_connect = 0;
     /// Local receive time of the previous frame [s] (detects a stale first frame)
     std::optional<double> previous_receive_s;
     /// Whether the "no frame rate: receive time used as stamp" warning was already logged

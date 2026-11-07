@@ -152,6 +152,9 @@ namespace vicon_probe
         JsonWriter json_;
         ViconDataStreamSDK::CPP::Client client_;
 
+        /// Local receive time of the previous frame [s] (detects a stale first frame)
+        double previous_receive_s_ = 0.0;
+
         /// Frames written so far (counted even if their frame number cannot be read)
         std::uint64_t frames_recorded_ = 0;
 

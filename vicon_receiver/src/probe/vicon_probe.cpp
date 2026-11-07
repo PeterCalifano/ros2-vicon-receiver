@@ -492,6 +492,7 @@ namespace vicon_probe
         json_.member("sdk_version", sdk_version(client_));
         json_.member("host", options_.host);
         json_.member("requested_frames", options_.frame_count);
+        json_.member("stream_mode", vicon_receiver::stream_mode_name(options_.stream_mode));
         json_.member("include_centroids", options_.include_centroids);
         json_.key("units");
         json_.begin_object();
@@ -547,9 +548,9 @@ namespace vicon_probe
         json_.key("stream");
         json_.begin_object();
 
-        // Same mode as the vicon_client node, so the probe sees what the node sees
-        json_.member("mode", "ClientPull");
-        errors.check("SetStreamMode", client_.SetStreamMode(sdk::StreamMode::ClientPull).Result);
+        // Same mode as the vicon_client node (probe.sh passes its stream_mode parameter)
+        json_.member("mode", vicon_receiver::stream_mode_name(options_.stream_mode));
+        errors.check("SetStreamMode", client_.SetStreamMode(options_.stream_mode).Result);
 
         json_.key("enabled");
         json_.begin_object();
@@ -724,13 +725,41 @@ namespace vicon_probe
         const sdk::Output_GetFrameNumber frame_number = client_.GetFrameNumber();
         if (errors.check("GetFrameNumber", frame_number.Result))
         {
+            // A jump larger than the frames the server can have produced since the previous
+            // frame means that the previous frame was stale (left over from a previous
+            // connection): recorded as such, not as missed frames
+            const std::optional<std::uint64_t> previous = dropped_frames_.last_frame_number();
+            const sdk::Output_GetFrameRate rate = client_.GetFrameRate();
+            bool previous_frame_stale = false;
+            if (previous.has_value() && frame_number.FrameNumber > previous.value() &&
+                rate.Result == sdk::Result::Success && rate.FrameRateHz > 0.0)
+            {
+                const std::uint64_t missing = frame_number.FrameNumber - previous.value() - 1;
+                // frames_recorded_ already counts the current frame
+                previous_frame_stale =
+                    vicon_receiver::is_stale_previous_frame(missing,
+                                                            receive_time_s - previous_receive_s_,
+                                                            rate.FrameRateHz,
+                                                            frames_recorded_ - 1,
+                                                            1.0);
+            }
+            if (previous_frame_stale)
+            {
+                dropped_frames_.restart_sequence();
+            }
+
             const std::uint64_t missed = dropped_frames_.record(frame_number.FrameNumber);
             json_.member("frame_number", frame_number.FrameNumber);
             json_.member("frames_missed_before", missed);
+            json_.member("previous_frame_stale", previous_frame_stale);
             console_line = "frame " + std::to_string(frame_number.FrameNumber);
             if (missed > 0)
             {
                 console_line += " (" + std::to_string(missed) + " missed)";
+            }
+            if (previous_frame_stale)
+            {
+                console_line += " (previous frame was stale)";
             }
         }
         else
@@ -826,6 +855,7 @@ namespace vicon_probe
         errors.write(json_);
         json_.end_object();
 
+        previous_receive_s_ = receive_time_s;
         console_ << console_line << std::endl;
     }
 

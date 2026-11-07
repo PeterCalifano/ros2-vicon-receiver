@@ -175,4 +175,23 @@ namespace vicon_receiver
             frame_rate_hz * (std::max(receive_interval_s, 0.0) + margin_s);
         return static_cast<double>(frames_missing) > producible_frames;
     }
+    bool is_stale_previous_frame(std::uint64_t frames_missing,
+                                 double receive_interval_s,
+                                 double frame_rate_hz,
+                                 std::uint64_t frames_before_current,
+                                 double margin_s)
+    {
+        if (frames_missing == 0)
+        {
+            return false;
+        }
+
+        // Start of a connection: the frames before the jump are left-overs of the previous session
+        if (frames_before_current <= kConnectionStartupFrames)
+        {
+            return true;
+        }
+        return is_implausible_frame_jump(
+            frames_missing, receive_interval_s, frame_rate_hz, margin_s);
+    }
 } // namespace vicon_receiver

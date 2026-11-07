@@ -223,6 +223,9 @@ bool ViconReceiverNode::connect()
     msg = "Connection successfully established with " + hostname;
     cout << msg << endl;
 
+    // The first frame of a connection may be stale: see read_frame_header()
+    frames_since_connect = 0;
+
     // Enable the data the node uses: segments always, markers and their cameras on request
     vicon_client.EnableSegmentData();
     if (enable_marker_data)
@@ -332,8 +335,11 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
     {
         const std::uint64_t frames_missing = frame_number.FrameNumber - previous_frame.value() - 1;
         const double receive_interval_s = receive_time.seconds() - previous_receive_s.value();
-        if (vicon_receiver::is_implausible_frame_jump(
-                frames_missing, receive_interval_s, frame_rate.FrameRateHz, kStaleFrameMarginS))
+        if (vicon_receiver::is_stale_previous_frame(frames_missing,
+                                                    receive_interval_s,
+                                                    frame_rate.FrameRateHz,
+                                                    frames_since_connect,
+                                                    kStaleFrameMarginS))
         {
             RCLCPP_INFO(this->get_logger(),
                         "Frame number jumped by %lu frames in %.3f s: the previous frame was "
@@ -346,6 +352,7 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
         }
     }
     previous_receive_s = receive_time.seconds();
+    frames_since_connect += 1;
 
     if (frame_number_ok)
     {

@@ -354,4 +354,27 @@ namespace dropped_frame_counter_tests
         // A local clock stepped backwards must not make every gap implausible
         EXPECT_FALSE(vicon_receiver::is_implausible_frame_jump(50, -0.5, 100.0, 1.0));
     }
+
+    TEST(FrameJump, AnyJumpAtConnectionStartMeansStaleFrames)
+    {
+        // Live case: previous session ended 0.45 s earlier, jump of 46 frames between the first two
+        // frames of the new connection, received back to back
+        EXPECT_TRUE(vicon_receiver::is_stale_previous_frame(45, 0.0, 100.0, 1, 1.0));
+        // Consecutive first frames: nothing stale
+        EXPECT_FALSE(vicon_receiver::is_stale_previous_frame(0, 0.0, 100.0, 1, 1.0));
+        // Live case: two left-over frames, the jump comes with the third frame
+        EXPECT_TRUE(vicon_receiver::is_stale_previous_frame(42, 0.002, 100.0, 2, 1.0));
+        // Last frame of the start-up window, then the normal rule
+        EXPECT_TRUE(vicon_receiver::is_stale_previous_frame(
+            42, 0.002, 100.0, vicon_receiver::kConnectionStartupFrames, 1.0));
+        EXPECT_FALSE(vicon_receiver::is_stale_previous_frame(
+            42, 0.002, 100.0, vicon_receiver::kConnectionStartupFrames + 1, 1.0));
+    }
+
+    TEST(FrameJump, LaterJumpsUseThePlausibilityRule)
+    {
+        // The same 45-frame jump later in the session is plausible: counted as dropped frames
+        EXPECT_FALSE(vicon_receiver::is_stale_previous_frame(45, 0.0, 100.0, 500, 1.0));
+        EXPECT_TRUE(vicon_receiver::is_stale_previous_frame(18469, 0.01, 100.0, 500, 1.0));
+    }
 } // namespace dropped_frame_counter_tests

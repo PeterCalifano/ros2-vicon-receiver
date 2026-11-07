@@ -33,6 +33,7 @@ readonly DEFAULT_FRAME_COUNT=100
 
 config_file="${DEFAULT_CONFIG_FILE}"
 host_override=""
+stream_mode_override=""
 frame_count="${DEFAULT_FRAME_COUNT}"
 output_file=""
 run_check=true
@@ -47,10 +48,13 @@ Record what the Vicon DataStream server sends (subjects, markers, quality,
 occlusion, latency, cameras) with vicon_probe, and write it as JSON.
 
 Options:
-  -c, --config FILE     Parameters file to take 'hostname' from
+  -c, --config FILE     Parameters file to take 'hostname' and 'stream_mode' from
                         (default: config/vicon_client.yaml)
       --host HOST[:PORT]
                         Server address, instead of the parameters file
+      --stream-mode MODE
+                        ServerPush, ClientPull or ClientPullPreFetch, instead of
+                        the parameters file (e.g. to compare the modes)
   -n, --frames N        Number of frames to record (default: ${DEFAULT_FRAME_COUNT})
   -o, --output FILE     JSON output (default: probe_output/vicon_probe_<UTC time>.json)
       --timeout-ms MS   Connection timeout of the SDK (default: SDK, 5000 ms)
@@ -97,6 +101,11 @@ parse_args()
                 output_file="$2"
                 shift
                 ;;
+            --stream-mode)
+                require_value "$1" "$#"
+                stream_mode_override="$2"
+                shift
+                ;;
             --timeout-ms)
                 require_value "$1" "$#"
                 probe_options+=("--timeout-ms" "$2")
@@ -135,6 +144,21 @@ resolve_host_spec()
     printf '%s\n' "${host_spec}"
 }
 
+# Print the stream mode: --stream-mode if given, else 'stream_mode' from the parameters
+# file, so that the probe measures what the node gets.
+resolve_stream_mode()
+{
+    if [[ -n "${stream_mode_override}" ]]; then
+        printf '%s\n' "${stream_mode_override}"
+        return 0
+    fi
+
+    require_config_file "${config_file}"
+    local stream_mode=""
+    stream_mode="$(read_config_param "${config_file}" "stream_mode")"
+    printf '%s\n' "${stream_mode}"
+}
+
 main()
 {
     parse_args "$@"
@@ -148,6 +172,8 @@ main()
     local host_spec=""
     host_spec="$(resolve_host_spec)"
     split_host_port "${host_spec}"
+    local stream_mode=""
+    stream_mode="$(resolve_stream_mode)"
 
     if [[ "${run_check}" == true ]]; then
         check_vicon_reachable "${VICON_HOST}" "${VICON_PORT}"
@@ -160,10 +186,11 @@ main()
         output_file="${PROBE_OUTPUT_DIR}/vicon_probe_$(date -u +%Y%m%dT%H%M%SZ).json"
     fi
 
-    info "Recording ${frame_count} frame(s) from ${VICON_HOST}:${VICON_PORT}"
+    info "Recording ${frame_count} frame(s) from ${VICON_HOST}:${VICON_PORT} (${stream_mode})"
     exec "${PROBE_EXECUTABLE}" \
         --host "${VICON_HOST}:${VICON_PORT}" \
         --frames "${frame_count}" \
+        --stream-mode "${stream_mode}" \
         --json "${output_file}" \
         "${probe_options[@]}"
 }
