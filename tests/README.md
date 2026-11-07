@@ -39,6 +39,7 @@ tests/
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
     fake_vicon_frames.py        synthetic ViconFrame publisher named vicon_client (record/export)
     replay_probe.py             replays a probe recording as ViconFrame (viewer checks without a Tracker)
+    fake_joint_states.py        G1 posture as JointState, waist turning (viewer checks without the robot)
   unit/
     cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node (incl. invalid values)
     cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames, leftover frames, local clock rate
@@ -54,6 +55,7 @@ tests/
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
     test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs
+    test_tools_viewer_joints.py        joint states: keep-last buffer, optional topic, root/frustums follow the joints (viser), G1 adapter
     test_tools_mount.py                robot model access and mount estimate (head/shoulder pairs, synthetic robot; needs the conda environment)
     test_tools_export.py               export to CSV without ROS (fake reader), partial-output cleanup
   integration/

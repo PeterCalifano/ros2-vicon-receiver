@@ -79,7 +79,8 @@ def Load_urdf(model_dir: Path, urdf_name: str, load_meshes: bool) -> yourdfpy.UR
 
 
 def Link_pose(urdf: yourdfpy.URDF, link: str, reference: str) -> np.ndarray:
-    """Pose (4x4) of a link in the frame of another link, at the zero joint configuration.
+    """Pose (4x4) of a link in the frame of another link, at the current joint configuration of
+    the URDF (zero after loading; update_cfg() changes it).
 
     Works in both directions of the kinematic tree (the scene graph is directed).
 

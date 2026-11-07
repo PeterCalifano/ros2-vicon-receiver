@@ -1,7 +1,8 @@
 """Configuration of the live viewer (config/viewer.yaml) and of the robot mount file.
 
 Every entry of the viewer config is required, as for the node parameters: a missing or
-malformed entry is reported by name (ConfigError) instead of being replaced by a default.
+malformed entry is reported by name (ConfigError) instead of being replaced by a default. The one
+exception is robot.joint_states_topic: without it the robot is drawn at zero joint angles.
 
 Example::
 
@@ -51,6 +52,8 @@ class RobotSettings:
     urdf: str
     mount_link: str
     mount_file: str
+    # sensor_msgs/JointState topic giving the joint angles of the model; None: zero angles
+    joint_states_topic: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,16 @@ def _Require(section: dict[str, Any], key: str, kind: type, where: str) -> Any:
     return value_
 
 
+def _Optional_text(section: dict[str, Any], key: str, where: str) -> str | None:
+    """Return section[key] if given (a non-empty string), None if absent or null."""
+    if section.get(key) is None:
+        return None
+    value_ = _Require(section, key, str, where)
+    if not value_.strip():
+        raise ConfigError(f"{where}.{key} must not be empty (leave it out to disable it)")
+    return value_
+
+
 def _Require_positive(value: float, where: str) -> float:
     """Return value if it is > 0."""
     if value <= 0:
@@ -194,6 +207,7 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
         urdf=_Require(robot_section_, "urdf", str, "robot"),
         mount_link=_Require(robot_section_, "mount_link", str, "robot"),
         mount_file=_Require(robot_section_, "mount_file", str, "robot"),
+        joint_states_topic=_Optional_text(robot_section_, "joint_states_topic", "robot"),
     )
 
     cameras_: list[PinholeCameraSettings] = []

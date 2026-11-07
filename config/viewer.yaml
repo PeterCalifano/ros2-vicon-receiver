@@ -54,6 +54,12 @@ robot:
   # scripts/estimate_mount.py and by the "save mount" button of the viewer).
   mount_file: "config/g1_mount.yaml"
 
+  # Optional: sensor_msgs/JointState topic with the joint angles of the model
+  # (for the G1: scripts/g1_joint_states.py converts unitree_hg/LowState). The
+  # latest value of each joint is kept; joints never received stay at 0. Leave
+  # it out to draw the model at zero joint angles.
+  joint_states_topic: "/joint_states"
+
 # Cameras drawn as frustums, at their optical frames of the G1 URDF (OpenCV
 # convention: z forward, y down). Intrinsics from /camera/camera/*/camera_info of
 # the robot recording dataset-g1-exp2ms-g128-20261019 (RealSense, no distortion).

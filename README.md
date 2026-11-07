@@ -68,7 +68,7 @@ This is NOT an official ROS 2 package, but it has been successfully tested with 
 - **ServerPush streaming** (`stream_mode` parameter) so that a slow consumer gets every frame late instead of losing it; the stale frames a server sends first after connecting are never published.
 - **Occluded poses** are no longer published as `PoseStamped`/TF (Vicon sends an all-zero pose); they stay in `ViconFrame` with their mask.
 - **YAML configuration only**: `config/vicon_client.yaml` holds every node parameter; the node has no built-in defaults and stops with a clear error on a missing or invalid entry. `client.launch.py` takes only `params_file`.
-- **Scripts**: build (installs ROS 2 if needed), launch with a reachability check, probe of the raw stream, live browser viewer (G1 model, camera frustums), MCAP recording and optional CSV/HDF5 export; live console telemetry.
+- **Scripts**: build (installs ROS 2 if needed), launch with a reachability check, probe of the raw stream, live browser viewer (G1 model in its current posture from joint states, camera frustums), MCAP recording and optional CSV/HDF5 export; live console telemetry.
 - Vicon names with characters such as `-` are converted into valid ROS names.
 - Unit and integration tests in `tests/` (GoogleTest + pytest).
 
@@ -98,7 +98,7 @@ This is NOT an official ROS 2 package, but it has been successfully tested with 
 - **`vicon_receiver`** (C++): executable **`vicon_client`** (the node), executable **`vicon_probe`** (records what the server sends, no ROS), launch file **`client.launch.py`**
 - **`vicon_receiver_msgs`**: `ViconFrame`, `SubjectState`, `SegmentState`, `MarkerState`
 - **`vicon_receiver_tools`** (Python): configuration helpers, live viewer, mount estimate, export
-- `config/`: node parameters (`vicon_client.yaml`), viewer (`viewer.yaml`), estimated G1 marker mount (`g1_mount.yaml`), Fast DDS profile for WSL (`fastdds_wsl.xml`)
+- `config/`: node parameters (`vicon_client.yaml`), viewer (`viewer.yaml`), estimated G1 marker mount (`g1_mount.yaml`), G1 motor order for joint states (`g1_joint_states.yaml`), Fast DDS profile for WSL (`fastdds_wsl.xml`)
 - `scripts/`: build, launch, probe, viewer, recording, export, formatting; `tests/`: all tests
 
 ---
@@ -230,6 +230,7 @@ scripts/probe.sh -n 500          # records what the server sends (JSON in probe_
 scripts/fetch_g1_model.sh        # copies the G1 model for the viewer (ssh, see config/viewer.yaml)
 scripts/estimate_mount.py -r probe_output/<probe>.json --write   # marker mount on the G1 for the viewer
 scripts/start_visualizer.sh      # live viewer: open http://127.0.0.1:8080
+scripts/g1_joint_states.py       # G1 LowState -> JointState, so the viewer shows the robot's posture (needs unitree_hg)
 scripts/record.sh -t my_session  # records an MCAP session in recordings/ (Ctrl+C to stop; -o DIR)
 scripts/export.sh recordings/<session> --format csv,hdf5   # optional conversion
 tests/run_tests.sh               # all tests

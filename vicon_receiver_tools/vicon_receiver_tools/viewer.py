@@ -230,6 +230,23 @@ def Telemetry_markdown(frame: ViewerFrame, rate_hz: float) -> str:
     return "\n".join(lines_)
 
 
+def Joint_configuration(joint_names: tuple[str, ...], positions: dict[str, float]) -> np.ndarray:
+    """Joint angles in the order of joint_names; joints without a received value are 0."""
+    return np.array([positions.get(name_, 0.0) for name_ in joint_names], dtype=float)
+
+
+def Joint_states_markdown(
+    joint_names: tuple[str, ...], positions: dict[str, float], age_s: float | None, topic: str | None
+) -> str:
+    """Telemetry line about the joint angles used for the robot model."""
+    if topic is None:
+        return "**Joints** zero angles (no joint_states_topic)  "
+    if age_s is None:
+        return f"**Joints** zero angles (nothing on {topic} yet)  "
+    matched_ = sum(1 for name_ in joint_names if name_ in positions)
+    return f"**Joints** {matched_}/{len(joint_names)} from {topic}, last {age_s:.1f} s ago  "
+
+
 # -------------------------------------------------------------------------------------------------
 # Frame buffer (written by the ROS callback, read by the scene loop)
 # -------------------------------------------------------------------------------------------------
@@ -315,6 +332,66 @@ class LatestFrameBuffer:
                 trail_.append(segment_.position.copy())
 
 
+@dataclass
+class LatestJointStates:
+    """Latest angle of every joint (keep-last), shared between the ROS callback and the scene loop.
+
+    The callback only stores the newest serialized sensor_msgs/JointState; it is decoded once per
+    scene update (positions()) and merged into the angles kept so far, so a joint keeps its last
+    value until a message brings a new one. Messages arriving between two scene updates are not
+    decoded: a publisher sending only some joints may be missed for one update.
+
+    Attributes:
+        deserialize: Turns a serialized message into a message object (rclpy deserialize).
+    """
+
+    deserialize: Callable[[bytes], Any] | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _pending: Any = field(default=None, repr=False)
+    _pending_is_serialized: bool = field(default=False, repr=False)
+    _positions: dict[str, float] = field(default_factory=dict, repr=False)
+    _last_receive_s: float | None = field(default=None, repr=False)
+
+    def put_serialized(self, data: bytes, receive_time_s: float | None = None) -> None:
+        """Store a serialized JointState (ROS callback with raw=True): no decoding here."""
+        self._store(data, True, receive_time_s)
+
+    def put_message(self, message: Any, receive_time_s: float | None = None) -> None:
+        """Store an already decoded JointState (or an object with name and position)."""
+        self._store(message, False, receive_time_s)
+
+    def positions(self) -> dict[str, float]:
+        """Angles kept so far [rad] by joint name; a new message is decoded and merged here."""
+        with self._lock:
+            if self._pending is not None:
+                message_ = self._pending
+                if self._pending_is_serialized:
+                    if self.deserialize is None:
+                        raise ValueError("LatestJointStates: serialized message without deserialize")
+                    message_ = self.deserialize(message_)
+                self._pending = None
+                # JointState allows an empty position array (velocities or efforts only)
+                for name_, position_ in zip(message_.name, message_.position):
+                    if np.isfinite(position_):
+                        self._positions[name_] = float(position_)
+            return dict(self._positions)
+
+    def age_s(self, now_s: float | None = None) -> float | None:
+        """Time since the last message [s] (local clock), None before the first one."""
+        with self._lock:
+            last_ = self._last_receive_s
+        if last_ is None:
+            return None
+        return (time.monotonic() if now_s is None else now_s) - last_
+
+    def _store(self, item: Any, serialized: bool, receive_time_s: float | None) -> None:
+        """Keep only the newest message until the next scene update."""
+        with self._lock:
+            self._pending = item
+            self._pending_is_serialized = serialized
+            self._last_receive_s = time.monotonic() if receive_time_s is None else receive_time_s
+
+
 # -------------------------------------------------------------------------------------------------
 # Scene
 # -------------------------------------------------------------------------------------------------
@@ -353,6 +430,14 @@ class ViserLiveViewer:
         self._camera_handles: dict[str, Any] = {}
         self._root_in_mount = np.eye(4)
         self._cameras_in_mount: dict[str, np.ndarray] = {}
+        # Model and its joint angles (zero until joint states arrive)
+        self._urdf: Any = None
+        self._viser_urdf: Any = None
+        self._joint_names: tuple[str, ...] = ()
+        self._configuration = np.zeros(0)
+        self._joints_line = Joint_states_markdown((), {}, None, config.robot.joint_states_topic)
+        # Pose of the mount link in the world at the last valid subject pose
+        self._mount_in_world: np.ndarray | None = None
         self._robot_note = self._load_robot()
 
         self._build_gui()
@@ -368,19 +453,21 @@ class ViserLiveViewer:
         model_dir_ = self._repo_root / robot_.directory
         try:
             urdf_ = Load_urdf(model_dir_, robot_.urdf, load_meshes=True)
-            self._root_in_mount = Link_pose(urdf_, urdf_.base_link, robot_.mount_link)
+            # Check the links once (zero angles); _apply_configuration() recomputes the poses
+            Link_pose(urdf_, urdf_.base_link, robot_.mount_link)
             for camera_ in self._config.cameras:
-                self._cameras_in_mount[camera_.name] = Link_pose(urdf_, camera_.frame, robot_.mount_link)
+                Link_pose(urdf_, camera_.frame, robot_.mount_link)
         except RobotModelError as error_:
             return f"robot model not shown: {error_}"
 
         # The URDF nodes hang below /robot, whose pose is set at every update
         self._robot_frame = self._server.scene.add_frame("/robot", show_axes=False)
-        viser_urdf_ = ViserUrdf(self._server, urdf_, root_node_name="/robot")
+        self._urdf = urdf_
+        self._viser_urdf = ViserUrdf(self._server, urdf_, root_node_name="/robot")
+        self._joint_names = tuple(self._viser_urdf.get_actuated_joint_names())
         # ViserUrdf creates the link frames at identity and places them only in update_cfg():
-        # without this call every link is drawn at the root. Zero joint angles = the
-        # configuration used for the mount and the camera poses above.
-        viser_urdf_.update_cfg(np.zeros(len(viser_urdf_.get_actuated_joint_names())))
+        # without this call every link is drawn at the root. Zero angles until joint states arrive.
+        self._apply_configuration(np.zeros(len(self._joint_names)))
 
         for index_, camera_ in enumerate(self._config.cameras):
             self._camera_handles[camera_.name] = self._server.scene.add_camera_frustum(
@@ -480,8 +567,35 @@ class ViserLiveViewer:
         """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), also without new frames."""
         now_ = time.monotonic()
         if now_ - self._last_telemetry_s >= TELEMETRY_PERIOD_S:
-            self._telemetry.content = Telemetry_markdown(frame, buffer.rate_hz())
+            self._telemetry.content = Telemetry_markdown(frame, buffer.rate_hz()) + "\n\n" + self._joints_line
             self._last_telemetry_s = now_
+
+    def update_joints(self, joint_states: LatestJointStates) -> None:
+        """Take the latest joint angles: the model, its root and the frustums follow them."""
+        if self._viser_urdf is None:
+            return
+        positions_ = joint_states.positions()
+        self._joints_line = Joint_states_markdown(
+            self._joint_names, positions_, joint_states.age_s(), self._config.robot.joint_states_topic
+        )
+        configuration_ = Joint_configuration(self._joint_names, positions_)
+        if np.array_equal(configuration_, self._configuration):
+            return
+        self._apply_configuration(configuration_)
+        # The subject tracks the mount link: with new angles the root and the cameras move around it
+        self._place_robot()
+
+    def _apply_configuration(self, configuration: np.ndarray) -> None:
+        """Set the joint angles of the model and the root and camera poses in the mount frame."""
+        from vicon_receiver_tools.robot_model import Link_pose
+
+        robot_ = self._config.robot
+        # Also updates self._urdf, which ViserUrdf shares: Link_pose() then uses these angles
+        self._viser_urdf.update_cfg(configuration)
+        self._configuration = configuration.copy()
+        self._root_in_mount = Link_pose(self._urdf, self._urdf.base_link, robot_.mount_link)
+        for camera_ in self._config.cameras:
+            self._cameras_in_mount[camera_.name] = Link_pose(self._urdf, camera_.frame, robot_.mount_link)
 
     def _update_markers(self, subject: ViewerSubject) -> None:
         """Markers of one subject as a point cloud; occluded ones have no position and are left out."""
@@ -522,16 +636,23 @@ class ViserLiveViewer:
         if not visible_:
             return
 
-        mount_in_world_ = Pose_matrix(segment_.position, segment_.wxyz) @ self._mount.matrix()
-        wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._root_in_mount)
-        self._robot_frame.wxyz = wxyz_
-        self._robot_frame.position = position_
-        first_pose_ = self._robot_position is None
-        self._robot_position = np.asarray(position_, dtype=float)
-        self._robot_heading_rad = float(np.arctan2(mount_in_world_[1, 0], mount_in_world_[0, 0]))
+        first_pose_ = self._mount_in_world is None
+        self._mount_in_world = Pose_matrix(segment_.position, segment_.wxyz) @ self._mount.matrix()
+        self._place_robot()
         if first_pose_:
             for client_ in self._server.get_clients().values():
                 self._point_camera_at_robot(client_)
+
+    def _place_robot(self) -> None:
+        """Pose of the robot root and of the frustums from the mount link pose and the joint angles."""
+        if self._mount_in_world is None:
+            return
+        mount_in_world_ = self._mount_in_world
+        wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._root_in_mount)
+        self._robot_frame.wxyz = wxyz_
+        self._robot_frame.position = position_
+        self._robot_position = np.asarray(position_, dtype=float)
+        self._robot_heading_rad = float(np.arctan2(mount_in_world_[1, 0], mount_in_world_[0, 0]))
         for name_, handle_ in self._camera_handles.items():
             wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._cameras_in_mount[name_])
             handle_.wxyz = wxyz_
@@ -577,6 +698,14 @@ def Main(argv: list[str] | None = None) -> int:
     node_.create_subscription(
         ViconFrame, config_.viewer.topic, buffer_.put_serialized, 10, raw=True
     )
+    joint_states_ = LatestJointStates()
+    if config_.robot.joint_states_topic is not None:
+        from sensor_msgs.msg import JointState
+
+        joint_states_.deserialize = lambda data_: deserialize_message(data_, JointState)
+        node_.create_subscription(
+            JointState, config_.robot.joint_states_topic, joint_states_.put_serialized, 10, raw=True
+        )
     def _Spin() -> None:
         # Ctrl+C shuts rclpy down from the main thread: end the spin quietly
         try:
@@ -586,12 +715,17 @@ def Main(argv: list[str] | None = None) -> int:
 
     spinner_ = threading.Thread(target=_Spin, daemon=True)
     spinner_.start()
-    print(f"[viewer] open http://{config_.viewer.host}:{config_.viewer.port} (topic {config_.viewer.topic})")
+    joints_note_ = config_.robot.joint_states_topic or "none: zero angles"
+    print(
+        f"[viewer] open http://{config_.viewer.host}:{config_.viewer.port} "
+        f"(topic {config_.viewer.topic}, joint states {joints_note_})"
+    )
 
     period_s_ = 1.0 / config_.viewer.update_rate_hz
     last_frame_: ViewerFrame | None = None
     try:
         while rclpy.ok():
+            viewer_.update_joints(joint_states_)
             frame_ = buffer_.latest()
             if frame_ is not None and frame_ is not last_frame_:
                 if last_frame_ is None:

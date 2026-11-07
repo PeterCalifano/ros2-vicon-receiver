@@ -22,6 +22,7 @@ SCRIPT_PATHS: list[str] = [
     "format.sh",
     "start_visualizer.sh",
     "estimate_mount.py",
+    "g1_joint_states.py",
     "fetch_g1_model.sh",
     "record.sh",
     "export.sh",
@@ -101,6 +102,7 @@ def test_unknown_option_is_rejected(shell: ShellRunner, script_path: str) -> Non
         ("start_visualizer.sh", "--config"),
         ("fetch_g1_model.sh", "-c"),
         ("estimate_mount.py", "-r"),
+        ("g1_joint_states.py", "-c"),
     ],
 )
 def test_option_without_value_is_rejected(shell: ShellRunner, script_path: str, option: str) -> None:
