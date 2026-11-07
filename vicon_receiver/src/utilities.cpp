@@ -1,12 +1,16 @@
 /**
- * @file sdk_names.cpp
+ * @file utilities.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
- * @brief Readable names of the Vicon DataStream SDK enumerations.
+ * @brief Small utilities shared by the node and the probe.
  * @version 0.1
- * @date 2026-10-30
+ * @date 2026-11-07
  */
 
-#include "vicon_receiver/sdk_names.hpp"
+#include "vicon_receiver/utilities.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 namespace vicon_receiver
 {
@@ -20,6 +24,47 @@ namespace vicon_receiver
             return "Unknown(" + std::to_string(value) + ")";
         }
     } // namespace
+
+    // --------------------------------------------------------------------------------------------
+    // Running statistics
+    // --------------------------------------------------------------------------------------------
+
+    void RunningMinMeanMax::add(double sample)
+    {
+        count_ += 1;
+        sum_ += sample;
+        minimum_ = std::min(minimum_, sample);
+        maximum_ = std::max(maximum_, sample);
+    }
+
+    void RunningMinMeanMax::reset()
+    {
+        *this = RunningMinMeanMax();
+    }
+
+    std::uint64_t RunningMinMeanMax::count() const
+    {
+        return count_;
+    }
+
+    double RunningMinMeanMax::minimum() const
+    {
+        return count_ == 0 ? std::nan("") : minimum_;
+    }
+
+    double RunningMinMeanMax::mean() const
+    {
+        return count_ == 0 ? std::nan("") : sum_ / static_cast<double>(count_);
+    }
+
+    double RunningMinMeanMax::maximum() const
+    {
+        return count_ == 0 ? std::nan("") : maximum_;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Names of the Vicon SDK enumerations
+    // --------------------------------------------------------------------------------------------
 
     std::string result_name(sdk::Result::Enum result)
     {
@@ -155,5 +200,35 @@ namespace vicon_receiver
             return "EyeTracker";
         }
         return unknown_value_name(static_cast<int>(device_type));
+    }
+
+    std::string stream_mode_name(sdk::StreamMode::Enum mode)
+    {
+        switch (mode)
+        {
+        case sdk::StreamMode::ClientPull:
+            return "ClientPull";
+        case sdk::StreamMode::ClientPullPreFetch:
+            return "ClientPullPreFetch";
+        case sdk::StreamMode::ServerPush:
+            return "ServerPush";
+        }
+        return unknown_value_name(static_cast<int>(mode));
+    }
+
+    sdk::StreamMode::Enum stream_mode_from_name(const std::string &name)
+    {
+        const sdk::StreamMode::Enum modes[] = {sdk::StreamMode::ServerPush,
+                                               sdk::StreamMode::ClientPull,
+                                               sdk::StreamMode::ClientPullPreFetch};
+        for (const sdk::StreamMode::Enum mode : modes)
+        {
+            if (stream_mode_name(mode) == name)
+            {
+                return mode;
+            }
+        }
+        throw std::invalid_argument("unknown stream mode '" + name +
+                                    "' (valid: ServerPush, ClientPull, ClientPullPreFetch)");
     }
 } // namespace vicon_receiver

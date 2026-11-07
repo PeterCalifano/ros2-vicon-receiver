@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -41,6 +42,11 @@ namespace
         parameters.emplace_back("map_xyz", std::vector<double>{0.0, 0.0, 0.0});
         parameters.emplace_back("map_rpy", std::vector<double>{0.0, 0.0, 0.0});
         parameters.emplace_back("map_rpy_in_degrees", false);
+        parameters.emplace_back("stream_mode", "ServerPush");
+        parameters.emplace_back("enable_marker_data", true);
+        parameters.emplace_back("enable_marker_ray_data", true);
+        parameters.emplace_back("acquisition_stamp_window_frames", 1000);
+        parameters.emplace_back("status_period_s", 1.0);
 
         rclcpp::NodeOptions options;
         options.use_global_arguments(false);
@@ -94,14 +100,13 @@ TEST(ViconReceiverNodePublishers, CollidingNamesDoNotShareATopic)
     EXPECT_EQ(node->count_publishers(topic_name), 1U);
 }
 
-TEST(ViconReceiverNodePublishers, InvalidNamespaceIsReportedNotThrown)
+TEST(ViconReceiverNodePublishers, InvalidNamespaceIsRejectedAtStartup)
 {
-    // The namespace parameter is used as given: an invalid one makes publisher creation fail.
-    // The failure must be logged and skipped, since an exception escaping the publisher thread
-    // would terminate the node.
-    auto node = std::make_shared<ViconReceiverNode>(make_options("bad namespace"));
-
-    EXPECT_NO_THROW(node->create_publisher_thread("qcar", "qcar"));
+    // The namespace parameter is used as given. The constructor creates the ViconFrame
+    // publisher on "<namespace>/frame", so an invalid namespace is a configuration error
+    // reported at startup (std::invalid_argument, FATAL in main()), instead of a failure in
+    // the publisher thread later on.
+    EXPECT_THROW(ViconReceiverNode node(make_options("bad namespace")), std::invalid_argument);
 }
 
 // -------------------------------------------------------------------------------------------------

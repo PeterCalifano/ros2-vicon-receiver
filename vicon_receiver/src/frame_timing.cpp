@@ -1,13 +1,15 @@
 /**
- * @file acquisition_clock.cpp
+ * @file frame_timing.cpp
  * @author PeterC (petercalifano.gs@gmail.com)
- * @brief Estimation of the camera acquisition time of Vicon frames on the local clock.
+ * @brief Timing of the Vicon frame stream: acquisition time of the frames, dropped, stale and
+ *        leftover frames, rate of the local clock.
  * @version 0.1
- * @date 2026-10-30
+ * @date 2026-11-07
  */
 
-#include "vicon_receiver/acquisition_clock.hpp"
+#include "vicon_receiver/frame_timing.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -16,9 +18,13 @@ namespace vicon_receiver
 {
     namespace
     {
-        /// Relative change of the frame rate considered a new rate (and a new timeline).
+        /// Relative change of the frame rate considered a new rate (new timeline, new measurement).
         constexpr double kFrameRateTolerance = 1e-9;
     } // namespace
+
+    // --------------------------------------------------------------------------------------------
+    // Acquisition time of the frames
+    // --------------------------------------------------------------------------------------------
 
     AcquisitionClock::AcquisitionClock(std::size_t window_frames) : window_frames_(window_frames)
     {
@@ -53,7 +59,7 @@ namespace vicon_receiver
         const double frames_since_reference = static_cast<double>(frame_number - reference_frame_);
         const double nominal_offset_s = frames_since_reference / frame_rate_hz_;
 
-        // FrameReferenceTime reference time: too late by the (positive) transport delay of this frame
+        // Reference time from this frame: too late by the (positive) transport delay of this frame
         const double candidate_s = receive_time_s - latency_s - nominal_offset_s;
 
         // Monotonic queue: candidates that are not smaller than the new one can never be the
@@ -87,6 +93,12 @@ namespace vicon_receiver
         return reference_frame_;
     }
 
+    void AcquisitionClock::reset()
+    {
+        started_ = false;
+        window_.clear();
+    }
+
     std::uint64_t AcquisitionClock::restarts() const
     {
         return restarts_;
@@ -99,5 +111,68 @@ namespace vicon_receiver
         frame_rate_hz_ = frame_rate_hz;
         window_.clear();
         restarts_ += 1;
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Dropped and stale frames
+    // --------------------------------------------------------------------------------------------
+
+    std::uint64_t DroppedFrameCounter::record(std::uint64_t frame_number)
+    {
+        received_ += 1;
+
+        std::uint64_t gap = 0;
+        if (previous_frame_number_.has_value())
+        {
+            const std::uint64_t previous = previous_frame_number_.value();
+            if (frame_number > previous)
+            {
+                gap = frame_number - previous - 1;
+            }
+            else
+            {
+                // Server restart or repeated frame: start counting again from here
+                discontinuities_ += 1;
+            }
+        }
+
+        missed_ += gap;
+        previous_frame_number_ = frame_number;
+        return gap;
+    }
+
+    std::uint64_t DroppedFrameCounter::received() const
+    {
+        return received_;
+    }
+
+    std::uint64_t DroppedFrameCounter::missed() const
+    {
+        return missed_;
+    }
+
+    std::uint64_t DroppedFrameCounter::discontinuities() const
+    {
+        return discontinuities_;
+    }
+    std::optional<std::uint64_t> DroppedFrameCounter::last_frame_number() const
+    {
+        return previous_frame_number_;
+    }
+
+    void DroppedFrameCounter::restart_sequence()
+    {
+        previous_frame_number_.reset();
+    }
+
+    bool is_implausible_frame_jump(std::uint64_t frames_missing,
+                                   double receive_interval_s,
+                                   double frame_rate_hz,
+                                   double margin_s)
+    {
+        // Most frames the server can have produced since the previous frame was received
+        const double producible_frames =
+            frame_rate_hz * (std::max(receive_interval_s, 0.0) + margin_s);
+        return static_cast<double>(frames_missing) > producible_frames;
     }
 } // namespace vicon_receiver

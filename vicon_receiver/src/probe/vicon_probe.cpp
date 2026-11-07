@@ -15,7 +15,7 @@
 #include <sstream>
 #include <thread>
 
-#include "vicon_receiver/sdk_names.hpp"
+#include "vicon_receiver/utilities.hpp"
 
 namespace vicon_probe
 {
@@ -410,38 +410,6 @@ namespace vicon_probe
             writer.end_object();
         }
         writer.end_array();
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // RunningMinMeanMax
-    // ---------------------------------------------------------------------------------------------
-
-    void RunningMinMeanMax::add(double sample)
-    {
-        count_ += 1;
-        sum_ += sample;
-        minimum_ = std::min(minimum_, sample);
-        maximum_ = std::max(maximum_, sample);
-    }
-
-    std::uint64_t RunningMinMeanMax::count() const
-    {
-        return count_;
-    }
-
-    double RunningMinMeanMax::minimum() const
-    {
-        return count_ == 0 ? std::nan("") : minimum_;
-    }
-
-    double RunningMinMeanMax::mean() const
-    {
-        return count_ == 0 ? std::nan("") : sum_ / static_cast<double>(count_);
-    }
-
-    double RunningMinMeanMax::maximum() const
-    {
-        return count_ == 0 ? std::nan("") : maximum_;
     }
 
     // ---------------------------------------------------------------------------------------------

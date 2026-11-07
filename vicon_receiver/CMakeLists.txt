@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(vicon_receiver_msgs REQUIRED)
 
 # detect arch
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -94,12 +95,13 @@ set_property(TARGET Boost::thread APPEND PROPERTY
 
 ###########################################################
 # --- Shared code (node and probe, no ROS) ---
-# Frame-gap detection, SDK enumeration names and the acquisition clock. Only the
-# Vicon SDK headers are used (no SDK calls), so no library is linked.
+# Timing of the frame stream (frame_timing), small utilities (utilities) and
+# the console status line. Only the Vicon SDK headers are used (no SDK calls),
+# so no library is linked.
 add_library(vicon_common STATIC
-  src/acquisition_clock.cpp
-  src/dropped_frame_counter.cpp
-  src/sdk_names.cpp
+  src/frame_timing.cpp
+  src/utilities.cpp
+  src/console_status_line.cpp
 )
 target_include_directories(vicon_common PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -114,8 +116,7 @@ target_include_directories(vicon_common PUBLIC
 # executable and by the unit tests (which construct the node without main()).
 add_library(vicon_receiver_core STATIC
   src/vicon_receiver_node.cpp
-  src/segment_pose_publisher.cpp
-  src/name_conversion.cpp
+  src/ros_conversions.cpp
 )
 
 # Our public headers are needed by every target linking the library
@@ -138,6 +139,7 @@ ament_target_dependencies(vicon_receiver_core PUBLIC
   tf2
   tf2_ros
   tf2_geometry_msgs
+  vicon_receiver_msgs
 )
 
 ###########################################################
@@ -233,12 +235,19 @@ if(BUILD_TESTING)
 
     # Shared code: frame gaps, SDK names, acquisition clock (pure, no SDK library)
     ament_add_gtest(test_common
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_acquisition_clock.cpp"
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_dropped_frame_counter.cpp"
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_sdk_names.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_frame_timing.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_utilities.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_console_status_line.cpp"
       TIMEOUT 60
     )
     target_link_libraries(test_common vicon_common)
+
+    # Vicon names and SDK results -> ROS names, messages and transforms (pure functions)
+    ament_add_gtest(test_ros_conversions
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_ros_conversions.cpp"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_ros_conversions vicon_receiver_core)
 
     # The test provides its own main() to initialise rclcpp once
     ament_add_gtest(test_vicon_receiver_node_params
@@ -248,13 +257,6 @@ if(BUILD_TESTING)
     )
     target_link_libraries(test_vicon_receiver_node_params vicon_receiver_core)
     ament_target_dependencies(test_vicon_receiver_node_params tf2_msgs)
-
-    # Conversion of Vicon names into ROS names (pure functions: default gtest main)
-    ament_add_gtest(test_name_conversion
-      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_name_conversion.cpp"
-      TIMEOUT 60
-    )
-    target_link_libraries(test_name_conversion vicon_receiver_core)
 
     # SegmentPosePublisher creation with Vicon names (needs rclcpp: own main())
     ament_add_gtest(test_vicon_receiver_node_publishers

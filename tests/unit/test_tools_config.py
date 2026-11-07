@@ -32,6 +32,11 @@ def test_repository_config_has_all_node_parameters() -> None:
         "map_xyz",
         "map_rpy",
         "map_rpy_in_degrees",
+        "stream_mode",
+        "enable_marker_data",
+        "enable_marker_ray_data",
+        "acquisition_stamp_window_frames",
+        "status_period_s",
     }
     assert set(parameters_) == expected_names_
 

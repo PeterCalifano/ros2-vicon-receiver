@@ -33,3 +33,25 @@ vicon_client:
     map_rpy: [0.0, 0.0, 0.0]
     # true: map_rpy is in degrees; false: radians.
     map_rpy_in_degrees: false
+
+    # --- Streaming ---
+    # SDK stream mode: "ServerPush" (the server sends every frame; late rather than
+    # lost if the node is slow: use it for recording), "ClientPull" (the node asks
+    # for the latest frame; frames are skipped if it is slow) or "ClientPullPreFetch".
+    stream_mode: "ServerPush"
+
+    # Labeled markers of every subject in the ViconFrame message.
+    enable_marker_data: true
+    # IDs of the cameras that saw each marker (needs enable_marker_data: true).
+    enable_marker_ray_data: true
+
+    # --- Timestamps ---
+    # Stamps are the estimated camera acquisition time: frame-number timeline at the
+    # server frame rate, offset fitted to (receive time - server latency) as the
+    # minimum over this many frames (1000 = 10 s at 100 Hz; follows clock drift).
+    acquisition_stamp_window_frames: 1000
+
+    # --- Console telemetry ---
+    # Period of the status line (rate, dropped frames, latency, quality, occlusion,
+    # cameras per marker) [s]; 0.0 disables it.
+    status_period_s: 1.0

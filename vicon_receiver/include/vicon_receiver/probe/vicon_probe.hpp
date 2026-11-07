@@ -20,7 +20,8 @@
 #include <vector>
 
 #include "vicon-datastream-sdk/DataStreamClient.h"
-#include "vicon_receiver/dropped_frame_counter.hpp"
+#include "vicon_receiver/frame_timing.hpp"
+#include "vicon_receiver/utilities.hpp"
 #include "vicon_receiver/probe/json_writer.hpp"
 #include "vicon_receiver/probe/probe_options.hpp"
 
@@ -61,31 +62,8 @@ namespace vicon_probe
         std::vector<std::pair<std::string, std::string>> failures_;
     };
 
-    /// Running minimum, mean and maximum of a quantity.
-    class RunningMinMeanMax
-    {
-      public:
-        /// Add one sample.
-        void add(double sample);
-
-        /// Number of samples.
-        std::uint64_t count() const;
-
-        /// Smallest sample (NaN if there is none).
-        double minimum() const;
-
-        /// Mean of the samples (NaN if there is none).
-        double mean() const;
-
-        /// Largest sample (NaN if there is none).
-        double maximum() const;
-
-      private:
-        std::uint64_t count_ = 0;
-        double sum_ = 0.0;
-        double minimum_ = std::numeric_limits<double>::infinity();
-        double maximum_ = -std::numeric_limits<double>::infinity();
-    };
+    // Running minimum, mean and maximum, shared with the node
+    using vicon_receiver::RunningMinMeanMax;
 
     /// Per-subject statistics over the recorded frames, printed in the final summary.
     struct SubjectRecordingStatistics

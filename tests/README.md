@@ -38,12 +38,13 @@ tests/
     fake_bin/ip                 fake 'ip' (addresses, routes) driven by FAKE_IP_* variables
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
   unit/
-    cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node
+    cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node (incl. invalid values)
+    cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames
+    cpp/test_utilities.cpp             GoogleTest: running statistics, SDK names
+    cpp/test_ros_conversions.cpp       GoogleTest: Vicon names -> ROS names, SDK results -> messages, TF, times
+    cpp/test_console_status_line.cpp       GoogleTest: console telemetry line, local clock check
     cpp/test_vicon_receiver_node_publishers.cpp  GoogleTest: publisher creation with Vicon names
-    cpp/test_name_conversion.cpp       GoogleTest: Vicon name -> ROS name conversion
     cpp/test_probe_*.cpp               GoogleTest: probe JSON writer and options
-    cpp/test_acquisition_clock.cpp     GoogleTest: acquisition-time estimation (synthetic timelines)
-    cpp/test_dropped_frame_counter.cpp, test_sdk_names.cpp  GoogleTest: shared frame-gap counter and SDK names
     test_common_sh.py                  scripts/lib/common.sh functions
     test_dds_sh.py                     scripts/lib/dds.sh (WSL mirrored networking detection/profile)
     test_scripts_cli.py                command-line handling of scripts/*.sh
@@ -53,6 +54,7 @@ tests/
   integration/
     test_dds.py                 two ROS 2 processes exchange messages (WSL DDS fix guard)
     test_messages.py            vicon_receiver_msgs field names and types (interface pin)
+    test_node_live.py           vicon_client against a real server: ViconFrame content (vicon_live)
     test_node_params.py         vicon_client with YAML parameter files (FATAL messages, exit codes)
     test_launch_file.py         client.launch.py: only a required params_file argument
     test_launch_sh.py           launch.sh: reachability gate and node start-up

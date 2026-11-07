@@ -47,6 +47,11 @@ namespace
         parameters.emplace_back("map_xyz", std::vector<double>{0.0, 0.0, 0.0});
         parameters.emplace_back("map_rpy", std::vector<double>{0.0, 0.0, 0.0});
         parameters.emplace_back("map_rpy_in_degrees", false);
+        parameters.emplace_back("stream_mode", "ServerPush");
+        parameters.emplace_back("enable_marker_data", true);
+        parameters.emplace_back("enable_marker_ray_data", true);
+        parameters.emplace_back("acquisition_stamp_window_frames", 1000);
+        parameters.emplace_back("status_period_s", 1.0);
         return parameters;
     }
 
@@ -176,7 +181,86 @@ INSTANTIATE_TEST_SUITE_P(EveryParameter,
                                            "vicon_frame",
                                            "map_xyz",
                                            "map_rpy",
-                                           "map_rpy_in_degrees"));
+                                           "map_rpy_in_degrees",
+                                           "stream_mode",
+                                           "enable_marker_data",
+                                           "enable_marker_ray_data",
+                                           "acquisition_stamp_window_frames",
+                                           "status_period_s"));
+
+// -------------------------------------------------------------------------------------------------
+// Invalid values of the streaming, stamping and telemetry parameters
+// -------------------------------------------------------------------------------------------------
+
+/// One invalid parameter value and a fragment of the expected error message.
+struct InvalidValueCase
+{
+    std::string name;         ///< Test case name
+    rclcpp::Parameter value;  ///< Parameter replacing the valid one
+    std::string message_part; ///< Expected in the std::invalid_argument message
+};
+
+/// Parameterised over invalid values; each must be rejected with a message naming it.
+class InvalidValueTest : public ::testing::TestWithParam<InvalidValueCase>
+{
+};
+
+TEST_P(InvalidValueTest, InvalidValueIsRejectedWithMessage)
+{
+    const InvalidValueCase &test_case = GetParam();
+    const rclcpp::NodeOptions options =
+        make_options(with_parameter(make_valid_parameters(), test_case.value));
+
+    try
+    {
+        ViconReceiverNode node(options);
+        FAIL() << "Expected std::invalid_argument";
+    }
+    catch (const std::invalid_argument &error)
+    {
+        const std::string message = error.what();
+        EXPECT_NE(message.find(test_case.message_part), std::string::npos) << message;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FrameParameters,
+    InvalidValueTest,
+    ::testing::Values(InvalidValueCase{"unknown_stream_mode",
+                                       rclcpp::Parameter("stream_mode", "Push"),
+                                       "unknown stream mode 'Push'"},
+                      InvalidValueCase{"lowercase_stream_mode",
+                                       rclcpp::Parameter("stream_mode", "serverpush"),
+                                       "valid: ServerPush, ClientPull, ClientPullPreFetch"},
+                      InvalidValueCase{"empty_window",
+                                       rclcpp::Parameter("acquisition_stamp_window_frames", 0),
+                                       "'acquisition_stamp_window_frames' must be >= 1"},
+                      InvalidValueCase{"negative_status_period",
+                                       rclcpp::Parameter("status_period_s", -1.0),
+                                       "'status_period_s' must be >= 0"},
+                      InvalidValueCase{
+                          "rays_without_markers",
+                          rclcpp::Parameter("enable_marker_data", false),
+                          "'enable_marker_ray_data' is true but 'enable_marker_data' is false"}),
+    [](const ::testing::TestParamInfo<InvalidValueCase> &info) { return info.param.name; });
+
+TEST(ViconReceiverNodeParams, EveryStreamModeIsAccepted)
+{
+    for (const char *mode : {"ServerPush", "ClientPull", "ClientPullPreFetch"})
+    {
+        const rclcpp::Parameter stream_mode("stream_mode", mode);
+        EXPECT_NO_THROW(ViconReceiverNode node(
+            make_options(with_parameter(make_valid_parameters(), stream_mode))))
+            << mode;
+    }
+}
+
+TEST(ViconReceiverNodeParams, StatusLineCanBeDisabled)
+{
+    const rclcpp::Parameter disabled("status_period_s", 0.0);
+    EXPECT_NO_THROW(
+        ViconReceiverNode node(make_options(with_parameter(make_valid_parameters(), disabled))));
+}
 
 // -------------------------------------------------------------------------------------------------
 // Wrong types
