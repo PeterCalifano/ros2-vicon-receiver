@@ -37,6 +37,7 @@ tests/
   fixtures/
     fake_bin/ip                 fake 'ip' (addresses, routes) driven by FAKE_IP_* variables
     fake_bin/timeout            fake 'timeout' reproducing TCP probe outcomes (FAKE_TIMEOUT_*)
+    fake_vicon_frames.py        synthetic ViconFrame publisher named vicon_client (record/export)
   unit/
     cpp/test_vicon_receiver_node_params.cpp   GoogleTest: parameter contract of the node (incl. invalid values)
     cpp/test_frame_timing.cpp          GoogleTest: acquisition time, dropped/stale frames
@@ -61,6 +62,7 @@ tests/
     test_launch_file.py         client.launch.py: only a required params_file argument
     test_launch_sh.py           launch.sh: reachability gate and node start-up
     test_probe.py               vicon_probe and probe.sh: CLI, connection failures, live recording
+    test_record_export.py       record.sh (MCAP, metadata, SIGINT stop) and export.sh (CSV, HDF5)
 ```
 
 ## How the C++ tests are built

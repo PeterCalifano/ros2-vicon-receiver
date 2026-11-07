@@ -21,6 +21,8 @@ SCRIPT_NAMES: list[str] = [
     "viz.sh",
     "estimate_mount.sh",
     "fetch_g1_model.sh",
+    "record.sh",
+    "export.sh",
 ]
 
 

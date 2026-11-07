@@ -41,3 +41,6 @@ probe_output/
 
 # Fetched robot models
 models/
+
+# Recorded sessions (scripts/record.sh)
+recordings/

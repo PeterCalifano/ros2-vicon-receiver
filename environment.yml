@@ -1,5 +1,5 @@
-# Conda environment of the Python tools of this repository: live viewer, mount estimate, tests
-# and code checks. The node itself does not need it (it is built with colcon and the
+# Conda environment of the Python tools of this repository: live viewer, mount estimate, HDF5
+# export, tests and code checks. The node itself does not need it (it is built with colcon and the
 # system ROS 2 Jazzy).
 #
 #   conda env create -f environment.yml      (scripts/build.sh does it if conda is installed)
@@ -17,6 +17,8 @@ dependencies:
   - numpy=1.26
   - scipy
   - pyyaml
+  # HDF5 export of recordings (scripts/export.sh --format hdf5)
+  - h5py
   # Tests and code checks (tests/run_tests.sh, scripts/format.sh)
   - pytest
   - clang-format=18.1.8
