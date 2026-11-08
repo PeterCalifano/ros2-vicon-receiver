@@ -53,6 +53,8 @@ namespace
         parameters.emplace_back("clock_check_block_s", 1.0);
         parameters.emplace_back("clock_rate_warning_limit", 0.01);
         parameters.emplace_back("connection_timeout_s", 5);
+        parameters.emplace_back("connect_retry_period_s", 1.0);
+        parameters.emplace_back("no_frame_pause_s", 0.005);
 
         rclcpp::NodeOptions options;
         options.use_global_arguments(false);

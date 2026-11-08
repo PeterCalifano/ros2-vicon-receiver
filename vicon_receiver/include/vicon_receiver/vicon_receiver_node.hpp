@@ -100,6 +100,10 @@ class ViconReceiverNode : public rclcpp::Node
     double clock_rate_warning_limit;
     /// Seconds without answer from the server before the connection counts as lost
     int connection_timeout_s;
+    /// Pause between two connection attempts [s]
+    double connect_retry_period_s;
+    /// Pause before asking again when the server has no frame [s]
+    double no_frame_pause_s;
 
     // --- Frame processing state ---
     /// Holds back the frames left over from the server's previous session after connecting
@@ -114,8 +118,8 @@ class ViconReceiverNode : public rclcpp::Node
     vicon_receiver::ConsoleStatusLine console_status_line;
     /// Start of the current status period
     std::chrono::steady_clock::time_point status_period_start;
-    /// Local receive time of the previous frame [s] (detects stale frames)
-    std::optional<double> previous_receive_s;
+    /// Monotonic local receive time of the previous frame [s] (detects stale frames)
+    std::optional<double> previous_receive_steady_s;
     /// Whether the "no frame rate: receive time used as stamp" warning was already logged
     bool missing_rate_warned = false;
 

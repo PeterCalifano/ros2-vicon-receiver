@@ -44,6 +44,8 @@ def test_repository_config_has_all_node_parameters() -> None:
         "clock_check_block_s",
         "clock_rate_warning_limit",
         "connection_timeout_s",
+        "connect_retry_period_s",
+        "no_frame_pause_s",
     }
     assert set(parameters_) == expected_names_
 

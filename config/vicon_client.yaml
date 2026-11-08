@@ -17,7 +17,7 @@ vicon_client:
     # 10.250.223.40: the Vicon Tracker PC on the lab network.
     hostname: "10.250.223.40"
 
-    # Number of frames buffered by the Vicon SDK client.
+    # Number of frames buffered by the Vicon SDK client. Range 1..100000.
     buffer_size: 200
 
     # Topics are published as /<namespace>/<subject_name>/<segment_name>.
@@ -63,10 +63,19 @@ vicon_client:
 
     # --- Connection ---
     # Seconds without any answer from the Vicon server (TCP keepalive probes, sent
-    # every second while no data arrives) before the connection counts as lost; the
-    # node then stops with exit status 2 (no reconnection). An idle server that is
-    # still reachable answers the probes. Range 2..3600.
+    # every second while no data arrives, less often above 128 s) before the
+    # connection counts as lost; the node then stops with exit status 2 (no
+    # reconnection). An idle server that is still reachable answers the probes.
+    # Range 2..3600.
     connection_timeout_s: 5
+
+    # Pause between two attempts to connect [s] (> 0). An unknown host or a refused
+    # connection fails at once, and the node keeps trying until the server answers.
+    connect_retry_period_s: 1.0
+
+    # Pause before asking again when the server has no frame [s] (> 0): Tracker not
+    # streaming, or ClientPull between two frames. Keeps the loop off 100 % of a core.
+    no_frame_pause_s: 0.005
 
     # --- Start of a connection ---
     # A Vicon server first sends 1-2 frames left over from its previous session,

@@ -10,9 +10,11 @@
 
 #include "vicon_receiver/vicon_receiver_node.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 
 #include "vicon_receiver/ros_conversions.hpp"
 #include "vicon_receiver/utilities.hpp"
@@ -72,7 +74,6 @@ ViconReceiverNode::ViconReceiverNode(const rclcpp::NodeOptions &options) : Node(
 
     // Retrieve parameters values
     this->get_parameter("hostname", hostname);
-    this->get_parameter("buffer_size", buffer_size);
     this->get_parameter("namespace", ns_name);
 
     this->get_parameter("world_frame", world_frame);
@@ -125,6 +126,8 @@ void ViconReceiverNode::read_frame_parameters()
     this->declare_parameter<double>("clock_check_block_s");
     this->declare_parameter<double>("clock_rate_warning_limit");
     this->declare_parameter<int>("connection_timeout_s");
+    this->declare_parameter<double>("connect_retry_period_s");
+    this->declare_parameter<double>("no_frame_pause_s");
 
     // Stream mode, by name as in the parameters file
     const std::string stream_mode_text = this->get_parameter("stream_mode").as_string();
@@ -221,6 +224,30 @@ void ViconReceiverNode::read_frame_parameters()
                                     std::to_string(timeout_s));
     }
     connection_timeout_s = static_cast<int>(timeout_s);
+
+    // Read as the 64-bit type of ROS parameters: reading it directly into the unsigned member
+    // would turn -1 into 4294967295
+    const std::int64_t requested_buffer_size = this->get_parameter("buffer_size").as_int();
+    if (requested_buffer_size < 1 || requested_buffer_size > 100000)
+    {
+        throw std::invalid_argument("parameter 'buffer_size' must be in 1..100000, got " +
+                                    std::to_string(requested_buffer_size));
+    }
+    buffer_size = static_cast<unsigned int>(requested_buffer_size);
+
+    connect_retry_period_s = this->get_parameter("connect_retry_period_s").as_double();
+    if (!std::isfinite(connect_retry_period_s) || connect_retry_period_s <= 0.0)
+    {
+        throw std::invalid_argument("parameter 'connect_retry_period_s' must be > 0, got " +
+                                    std::to_string(connect_retry_period_s));
+    }
+
+    no_frame_pause_s = this->get_parameter("no_frame_pause_s").as_double();
+    if (!std::isfinite(no_frame_pause_s) || no_frame_pause_s <= 0.0)
+    {
+        throw std::invalid_argument("parameter 'no_frame_pause_s' must be > 0, got " +
+                                    std::to_string(no_frame_pause_s));
+    }
 }
 
 // Publish the static transform from map to vicon origin
@@ -257,12 +284,15 @@ bool ViconReceiverNode::connect()
     // Retry connection until successful
     while (!vicon_client.IsConnected().Connected && rclcpp::ok())
     {
-        bool ok = (vicon_client.Connect(hostname).Result == Result::Success);
-        if (!ok)
+        const Result::Enum result = vicon_client.Connect(hostname).Result;
+        if (result != Result::Success)
         {
             counter++;
-            msg = "Connect failed, reconnecting (" + std::to_string(counter) + ")...";
+            msg = "Connect failed (" + vicon_receiver::result_name(result) + "), retrying (" +
+                  std::to_string(counter) + ")...";
             cout << msg << endl;
+            // An unknown host or a refused connection fails at once: don't retry at full speed
+            std::this_thread::sleep_for(std::chrono::duration<double>(connect_retry_period_s));
         }
     }
     if (!rclcpp::ok())
@@ -340,7 +370,7 @@ void ViconReceiverNode::reset_stream_state()
     dropped_frames.restart_sequence();
     acquisition_clock->reset();
     local_clock_rate_monitor->restart();
-    previous_receive_s.reset();
+    previous_receive_steady_s.reset();
     console_status_line.reset();
     status_period_start = std::chrono::steady_clock::now();
 }
@@ -466,6 +496,8 @@ bool ViconReceiverNode::get_frame()
                                  vicon_receiver::result_name(frame_result.Result).c_str());
         }
         this->print_status_if_due();
+        // GetFrame may return at once with nothing to read: don't spin a CPU core on it
+        std::this_thread::sleep_for(std::chrono::duration<double>(no_frame_pause_s));
         return true;
     }
 
@@ -504,10 +536,11 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
     // dropped frames, but a new timeline
     const std::optional<std::uint64_t> previous_frame = dropped_frames.last_frame_number();
     if (frame_number_ok && frame_rate_ok && previous_frame.has_value() &&
-        frame_number.FrameNumber > previous_frame.value() && previous_receive_s.has_value())
+        frame_number.FrameNumber > previous_frame.value() && previous_receive_steady_s.has_value())
     {
         const std::uint64_t frames_missing = frame_number.FrameNumber - previous_frame.value() - 1;
-        const double receive_interval_s = receive_time.seconds() - previous_receive_s.value();
+        // Monotonic clock: a step of the system clock must not look like elapsed time
+        const double receive_interval_s = receive_steady_s - previous_receive_steady_s.value();
         if (vicon_receiver::is_implausible_frame_jump(
                 frames_missing, receive_interval_s, frame_rate.FrameRateHz, kStaleFrameMarginS))
         {
@@ -521,7 +554,7 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
             local_clock_rate_monitor->restart();
         }
     }
-    previous_receive_s = receive_time.seconds();
+    previous_receive_steady_s = receive_steady_s;
 
     if (frame_number_ok)
     {
@@ -612,7 +645,17 @@ void ViconReceiverNode::read_subjects(vicon_receiver_msgs::msg::ViconFrame &fram
     for (unsigned int subject_index = 0; subject_index < subject_count.SubjectCount;
          ++subject_index)
     {
-        const std::string subject_name = vicon_client.GetSubjectName(subject_index).SubjectName;
+        const Output_GetSubjectName subject = vicon_client.GetSubjectName(subject_index);
+        if (subject.Result != Result::Success)
+        {
+            RCLCPP_WARN_THROTTLE(this->get_logger(),
+                                 *this->get_clock(),
+                                 5000,
+                                 "GetSubjectName failed: %s",
+                                 vicon_receiver::result_name(subject.Result).c_str());
+            continue;
+        }
+        const std::string subject_name = subject.SubjectName;
 
         vicon_receiver_msgs::msg::SubjectState subject_msg;
         subject_msg.name = subject_name;
@@ -631,8 +674,18 @@ void ViconReceiverNode::read_subjects(vicon_receiver_msgs::msg::ViconFrame &fram
             segment_count.Result == Result::Success ? segment_count.SegmentCount : 0;
         for (unsigned int segment_index = 0; segment_index < segments; ++segment_index)
         {
-            const std::string segment_name =
-                vicon_client.GetSegmentName(subject_name, segment_index).SegmentName;
+            const Output_GetSegmentName segment =
+                vicon_client.GetSegmentName(subject_name, segment_index);
+            if (segment.Result != Result::Success)
+            {
+                RCLCPP_WARN_THROTTLE(this->get_logger(),
+                                     *this->get_clock(),
+                                     5000,
+                                     "GetSegmentName failed: %s",
+                                     vicon_receiver::result_name(segment.Result).c_str());
+                continue;
+            }
+            const std::string segment_name = segment.SegmentName;
 
             // Every segment goes into ViconFrame, occluded or not, with its occlusion mask
             vicon_receiver_msgs::msg::SegmentState segment_msg = vicon_receiver::make_segment_state(

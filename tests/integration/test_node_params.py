@@ -8,6 +8,7 @@ points the node at a local TCP listener and stops it once it has started.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -96,3 +97,20 @@ def test_node_starts_with_valid_config(
     assert FATAL_PREFIX not in outcome_.output
     # Still running when the expected line appeared: stopped by the test, not crashed
     assert outcome_.returncode is None
+
+
+def test_failed_connections_are_paced_and_name_the_sdk_result(
+    ros_env: dict[str, str], make_config: Callable[..., Path]
+) -> None:
+    """An unknown host fails at once: attempts follow connect_retry_period_s, with the cause."""
+    config_ = make_config(
+        overrides={"hostname": "nonexistent.invalid", "connect_retry_period_s": 0.5}
+    )
+    # The text never appears: the node is observed for the whole window, then stopped
+    outcome_ = Run_until_output(Node_command(config_), ros_env, "never printed", timeout_s=3.0)
+
+    attempts_ = re.findall(r"Connect failed \((\w+)\)", outcome_.output)
+    if not attempts_:
+        pytest.skip("name resolution on this network took longer than the observation window")
+    # At most one attempt per period; without the pause it was about 77 attempts per second
+    assert len(attempts_) <= 7, outcome_.output

@@ -58,6 +58,8 @@ namespace
         parameters.emplace_back("clock_check_block_s", 1.0);
         parameters.emplace_back("clock_rate_warning_limit", 0.01);
         parameters.emplace_back("connection_timeout_s", 5);
+        parameters.emplace_back("connect_retry_period_s", 1.0);
+        parameters.emplace_back("no_frame_pause_s", 0.005);
         return parameters;
     }
 
@@ -198,7 +200,9 @@ INSTANTIATE_TEST_SUITE_P(EveryParameter,
                                            "clock_check_measurement_s",
                                            "clock_check_block_s",
                                            "clock_rate_warning_limit",
-                                           "connection_timeout_s"));
+                                           "connection_timeout_s",
+                                           "connect_retry_period_s",
+                                           "no_frame_pause_s"));
 
 // -------------------------------------------------------------------------------------------------
 // Invalid values of the streaming, stamping and telemetry parameters
@@ -266,6 +270,21 @@ INSTANTIATE_TEST_SUITE_P(
         InvalidValueCase{"short_connection_timeout",
                          rclcpp::Parameter("connection_timeout_s", 1),
                          "'connection_timeout_s' must be in 2..3600"},
+        InvalidValueCase{"zero_buffer_size",
+                         rclcpp::Parameter("buffer_size", 0),
+                         "'buffer_size' must be in 1..100000"},
+        InvalidValueCase{"negative_buffer_size",
+                         rclcpp::Parameter("buffer_size", -1),
+                         "'buffer_size' must be in 1..100000"},
+        InvalidValueCase{"huge_buffer_size",
+                         rclcpp::Parameter("buffer_size", 100001),
+                         "'buffer_size' must be in 1..100000"},
+        InvalidValueCase{"zero_connect_retry_period",
+                         rclcpp::Parameter("connect_retry_period_s", 0.0),
+                         "'connect_retry_period_s' must be > 0"},
+        InvalidValueCase{"zero_no_frame_pause",
+                         rclcpp::Parameter("no_frame_pause_s", 0.0),
+                         "'no_frame_pause_s' must be > 0"},
         InvalidValueCase{"zero_warning_limit",
                          rclcpp::Parameter("clock_rate_warning_limit", 0.0),
                          "'clock_rate_warning_limit' must be > 0"},

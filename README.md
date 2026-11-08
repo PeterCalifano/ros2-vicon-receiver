@@ -276,6 +276,8 @@ The node has no built-in defaults: a missing parameter, a wrong type (e.g. `0` i
 | `clock_check_block_s` | double | `1.0` | Blocks at both ends of a measurement whose least delayed frames are compared [s] (measurement > 2 blocks) |
 | `clock_rate_warning_limit` | double | `0.01` | Relative clock rate difference that triggers a warning (0.01 = 1 %) |
 | `connection_timeout_s` | int | `5` | Seconds without answer from the server (TCP keepalive) before the connection counts as lost; the node then stops with exit status 2 (no reconnection) |
+| `connect_retry_period_s` | double | `1.0` | Pause between two attempts to connect [s] |
+| `no_frame_pause_s` | double | `0.005` | Pause before asking again when the server has no frame [s] |
 
 ### Published topics
 

@@ -40,6 +40,19 @@ namespace vicon_probe
             return std::chrono::duration<double>(since_epoch).count();
         }
 
+        /// Seconds on the monotonic clock (not affected by steps of the system clock).
+        double steady_time_seconds()
+        {
+            const auto since_start = std::chrono::steady_clock::now().time_since_epoch();
+            return std::chrono::duration<double>(since_start).count();
+        }
+
+        /// Count reported by the SDK, or the name of the failure.
+        std::string count_or_failure(sdk::Result::Enum result, unsigned int count)
+        {
+            return result == sdk::Result::Success ? std::to_string(count) : result_name(result);
+        }
+
         /// Current UTC time as ISO 8601 text, e.g. "2026-10-30T12:00:00Z".
         std::string utc_timestamp()
         {
@@ -716,6 +729,7 @@ namespace vicon_probe
     {
         // Taken first, as close as possible to the arrival of the frame
         const double receive_time_s = unix_time_seconds();
+        const double receive_steady_s = steady_time_seconds();
         frames_recorded_ += 1;
 
         FailedSdkCallLog errors;
@@ -736,12 +750,12 @@ namespace vicon_probe
             {
                 const std::uint64_t missing = frame_number.FrameNumber - previous.value() - 1;
                 // frames_recorded_ already counts the current frame
-                previous_frame_stale =
-                    vicon_receiver::is_stale_previous_frame(missing,
-                                                            receive_time_s - previous_receive_s_,
-                                                            rate.FrameRateHz,
-                                                            frames_recorded_ - 1,
-                                                            1.0);
+                previous_frame_stale = vicon_receiver::is_stale_previous_frame(
+                    missing,
+                    receive_steady_s - previous_receive_steady_s_,
+                    rate.FrameRateHz,
+                    frames_recorded_ - 1,
+                    1.0);
             }
             if (previous_frame_stale)
             {
@@ -855,7 +869,7 @@ namespace vicon_probe
         errors.write(json_);
         json_.end_object();
 
-        previous_receive_s_ = receive_time_s;
+        previous_receive_steady_s_ = receive_steady_s;
         console_ << console_line << std::endl;
     }
 
@@ -1094,11 +1108,18 @@ namespace vicon_probe
         console_ << "  subjects:      " << subject_count.SubjectCount << "\n";
         for (unsigned int index = 0; index < subject_count.SubjectCount; ++index)
         {
-            const std::string subject = client_.GetSubjectName(index).SubjectName;
+            const sdk::Output_GetSubjectName name = client_.GetSubjectName(index);
+            if (name.Result != sdk::Result::Success)
+            {
+                console_ << "    subject " << index << ": " << result_name(name.Result) << "\n";
+                continue;
+            }
+            const std::string subject = name.SubjectName;
             const sdk::Output_GetSegmentCount segments = client_.GetSegmentCount(subject);
             const sdk::Output_GetMarkerCount markers = client_.GetMarkerCount(subject);
-            console_ << "    " << subject << ": " << segments.SegmentCount << " segment(s), "
-                     << markers.MarkerCount << " marker(s)\n";
+            console_ << "    " << subject << ": "
+                     << count_or_failure(segments.Result, segments.SegmentCount) << " segment(s), "
+                     << count_or_failure(markers.Result, markers.MarkerCount) << " marker(s)\n";
         }
         console_ << std::endl;
     }
