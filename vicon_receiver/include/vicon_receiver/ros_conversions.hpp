@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "builtin_interfaces/msg/time.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "vicon-datastream-sdk/DataStreamClient.h"
 #include "vicon_receiver_msgs/msg/marker_state.hpp"
@@ -142,6 +143,19 @@ namespace vicon_receiver
     make_segment_transform(const vicon_receiver_msgs::msg::SegmentState &segment,
                            const std::string &parent_frame,
                            const builtin_interfaces::msg::Time &stamp);
+
+    /**
+     * @brief Pose of a segment expressed in the world frame.
+     *
+     * @param segment         Segment with its pose in the Vicon frame [m].
+     * @param vicon_in_world  Static transform of the Vicon frame in the world frame; its
+     *                        header.frame_id becomes the frame of the result.
+     * @param stamp           Stamp of the pose (estimated acquisition time).
+     */
+    geometry_msgs::msg::PoseStamped
+    make_segment_pose_in_world(const vicon_receiver_msgs::msg::SegmentState &segment,
+                               const geometry_msgs::msg::TransformStamped &vicon_in_world,
+                               const builtin_interfaces::msg::Time &stamp);
 
     /**
      * @brief ROS time message from seconds since the epoch.

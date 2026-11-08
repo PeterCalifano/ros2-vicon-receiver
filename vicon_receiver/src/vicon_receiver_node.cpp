@@ -341,8 +341,6 @@ bool ViconReceiverNode::disconnect()
     if (!vicon_client.IsConnected().Connected)
         return true;
 
-    sleep(1); // Wait before disconnecting
-
     // Disable the data streams enabled in connect()
     vicon_client.DisableSegmentData();
     vicon_client.DisableMarkerData();
@@ -778,63 +776,17 @@ void ViconReceiverNode::publish_segment_pose(const std::string &subject_name,
     const geometry_msgs::msg::TransformStamped tf_msg =
         vicon_receiver::make_segment_transform(segment, vicon_frame, stamp);
 
-    // Publish the position data
-    boost::mutex::scoped_try_lock lock(mutex);
-    if (lock.owns_lock())
+    // Publisher created the first time the segment is seen; one that failed is not retried
+    auto publisher_it = pub_map.find(key);
+    if (publisher_it == pub_map.end() && failed_publishers.count(key) == 0)
     {
-        // Check if a publisher exists for the segment
-        map<string, SegmentPosePublisher>::iterator pub_it = pub_map.find(key);
-        if (pub_it != pub_map.end())
-        {
-            SegmentPosePublisher &pub = pub_it->second;
-
-            if (pub.is_ready)
-            {
-                // Build a PoseStamped in the Vicon frame from the computed TransformStamped.
-                geometry_msgs::msg::PoseStamped vicon_pose_msg;
-
-                // Header: copy timestamp and frame_id ("vicon") from the transform header.
-                vicon_pose_msg.header = tf_msg.header;
-
-                // Position: copy the already meter-converted translation components.
-                vicon_pose_msg.pose.position.x = tf_msg.transform.translation.x;
-                vicon_pose_msg.pose.position.y = tf_msg.transform.translation.y;
-                vicon_pose_msg.pose.position.z = tf_msg.transform.translation.z;
-
-                // Orientation: copy the quaternion (x, y, z, w) directly from the transform.
-                vicon_pose_msg.pose.orientation = tf_msg.transform.rotation;
-
-                // Update timestamp of static transform
-                static_tf.header.stamp = tf_msg.header.stamp;
-
-                // Transform the pose to the global frame
-                geometry_msgs::msg::PoseStamped global_pose_msg;
-                tf2::doTransform(vicon_pose_msg, global_pose_msg, static_tf);
-
-                // Publish the transformed pose
-                pub.publish(global_pose_msg);
-            }
-        }
-        else
-        {
-            // Create a publisher if it doesn't exist, de-duplicating concurrent attempts.
-            // Segments whose publisher failed once are not retried (error already logged).
-            if (failed_publishers.find(key) != failed_publishers.end())
-            {
-                lock.unlock();
-            }
-            else if (pending_publishers.find(key) == pending_publishers.end())
-            {
-                pending_publishers.insert(key);
-                lock.unlock();
-                create_publisher(subject_name, segment_name);
-            }
-            else
-            {
-                // Another thread is already creating this publisher
-                lock.unlock();
-            }
-        }
+        this->create_segment_publisher(subject_name, segment_name);
+        publisher_it = pub_map.find(key);
+    }
+    if (publisher_it != pub_map.end())
+    {
+        publisher_it->second.publish(
+            vicon_receiver::make_segment_pose_in_world(segment, static_tf, stamp));
     }
 
     // Two segments whose names convert to the same frame id would alternate on one TF frame:
@@ -919,28 +871,26 @@ void ViconReceiverNode::print_status_if_due()
     }
 }
 
-// Create a publisher for a specific subject and segment
-void ViconReceiverNode::create_publisher(const string subject_name, const string segment_name)
-{
-    // Launch a thread to create the publisher
-    boost::thread(&ViconReceiverNode::create_publisher_thread, this, subject_name, segment_name);
-}
-
-// Thread function to create a publisher
-void ViconReceiverNode::create_publisher_thread(const string subject_name,
-                                                const string segment_name)
+// DEVNOTE: why publishers are created here, in the frame loop.
+// Segment names are only known from the frames, so publishers cannot be created in the
+// constructor. The original design created them in a detached boost::thread, with a mutex and a
+// try-lock in the frame loop. That thread kept `this`: if the frame loop ended right after a new
+// segment appeared (connection lost, Ctrl+C), the node was destroyed while the thread still used
+// it. A publisher is now created here once per segment and reused for the whole run. This blocks
+// the frame loop once per segment; in ServerPush the SDK buffers the frames meanwhile. A thread
+// owned and joined by the node would also fix the lifetime, but would keep the lock and the poses
+// skipped while it holds it.
+void ViconReceiverNode::create_segment_publisher(const std::string &subject_name,
+                                                 const std::string &segment_name)
 {
     // Construct the topic name (valid ROS names) and the key (original Vicon names)
-    std::string topic_name =
+    const std::string topic_name =
         vicon_receiver::make_segment_topic_name(ns_name, subject_name, segment_name);
-    std::string key = subject_name + "/" + segment_name;
+    const std::string key = subject_name + "/" + segment_name;
 
     // Log publisher creation
-    string msg = "Creating publisher for segment " + segment_name + " from subject " +
-                 subject_name + " on topic " + topic_name;
-    cout << msg << endl;
-
-    boost::mutex::scoped_lock lock(mutex);
+    cout << "Creating publisher for segment " << segment_name << " from subject " << subject_name
+         << " on topic " << topic_name << endl;
 
     // Two segments whose names convert to the same tokens would share a topic: refuse the second
     const std::string topic_owner = topic_owners.owner_of(topic_name);
@@ -953,16 +903,13 @@ void ViconReceiverNode::create_publisher_thread(const string subject_name,
                      topic_name.c_str(),
                      topic_owner.c_str());
         failed_publishers.insert(key);
-        pending_publishers.erase(key);
         return;
     }
 
-    // Create and store the publisher. This runs in a detached thread: an exception escaping it
-    // would terminate the whole node, so failures are logged and the segment is skipped.
+    // A name that ROS rejects must not stop the node: the segment is skipped
     try
     {
-        pub_map.insert(std::map<std::string, SegmentPosePublisher>::value_type(
-            key, SegmentPosePublisher(topic_name, this)));
+        pub_map.emplace(key, SegmentPosePublisher(topic_name, this));
         topic_owners.claim(topic_name, key);
     }
     catch (const std::exception &error)
@@ -974,21 +921,16 @@ void ViconReceiverNode::create_publisher_thread(const string subject_name,
                      error.what());
         failed_publishers.insert(key);
     }
-
-    // Clear the pending flag
-    pending_publishers.erase(key);
-    lock.unlock();
 }
 
 // DEVNOTE: code location may be reevaluated in the future based on further developments.
 // SegmentPosePublisher: one PoseStamped publisher of a segment
-SegmentPosePublisher::SegmentPosePublisher(std::string topic_name, rclcpp::Node *node)
+SegmentPosePublisher::SegmentPosePublisher(const std::string &topic_name, rclcpp::Node *node)
 {
     position_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(topic_name, 10);
-    is_ready = true;
 }
 
-void SegmentPosePublisher::publish(geometry_msgs::msg::PoseStamped pose_msg)
+void SegmentPosePublisher::publish(const geometry_msgs::msg::PoseStamped &pose_msg)
 {
     position_publisher_->publish(pose_msg);
 }

@@ -18,8 +18,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unistd.h>
-#include "boost/thread.hpp"
 #include <set>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -46,18 +44,21 @@ class SegmentPosePublisher
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr position_publisher_;
 
   public:
-    bool is_ready = false;
-
-    SegmentPosePublisher(std::string topic_name, rclcpp::Node *node);
+    SegmentPosePublisher(const std::string &topic_name, rclcpp::Node *node);
 
     // Publishes the given position in the ROS2 topic whose name is indicated in
     // the constructor.
-    void publish(geometry_msgs::msg::PoseStamped p);
+    void publish(const geometry_msgs::msg::PoseStamped &pose_msg);
 };
+
+// Test access to the private members of the node; defined only in tests/.
+class ViconReceiverNodeTestAccess;
 
 // Main Node class
 class ViconReceiverNode : public rclcpp::Node
 {
+    friend class ViconReceiverNodeTestAccess;
+
   private:
     ViconDataStreamSDK::CPP::Client vicon_client;
 
@@ -65,13 +66,11 @@ class ViconReceiverNode : public rclcpp::Node
     unsigned int buffer_size;
     string ns_name;
     map<string, SegmentPosePublisher> pub_map;
-    boost::mutex mutex;
-    std::set<std::string> pending_publishers;
     /// Segments ("subject/segment") whose publisher could not be created; never retried.
     std::set<std::string> failed_publishers;
     /// Owner ("subject/segment") of each topic, to refuse two segments on the same topic.
     vicon_receiver::NameOwnership topic_owners;
-    /// Owner ("subject/segment") of each TF child frame (frame loop only, no lock needed).
+    /// Owner ("subject/segment") of each TF child frame.
     vicon_receiver::NameOwnership tf_frame_owners;
     /// Segments refused a TF frame (logged once each).
     std::set<std::string> refused_tf_segments;
@@ -189,6 +188,18 @@ class ViconReceiverNode : public rclcpp::Node
     /// Print the status line if the period is over (also while no frame arrives).
     void print_status_if_due();
 
+    /**
+     * @brief Create the PoseStamped publisher of one segment, the first time the segment is seen.
+     *
+     * Runs in the frame loop; it costs a few milliseconds once per segment. The topic is
+     * "<namespace>/<subject>/<segment>" with the Vicon names converted by
+     * vicon_receiver::to_ros_name_token(). If the publisher cannot be created (invalid name, or
+     * topic already used by another segment whose names convert to the same tokens), the error is
+     * logged and the segment is never retried; TF is still broadcast for it, unless another
+     * segment already owns its TF frame.
+     */
+    void create_segment_publisher(const std::string &subject_name, const std::string &segment_name);
+
   public:
     /// Name of the node; also the top-level key of the parameters file.
     static constexpr const char *kNodeName = "vicon_client";
@@ -236,20 +247,6 @@ class ViconReceiverNode : public rclcpp::Node
      *         was lost (logged as FATAL; no reconnection, e.g. for a supervisor to restart the node).
      */
     int run_frame_loop();
-
-    // functions to create a segment publisher in a new thread
-    void create_publisher(const string subject_name, const string segment_name);
-
-    /**
-     * @brief Create the PoseStamped publisher of one segment (run in a separate thread).
-     *
-     * The topic is "<namespace>/<subject>/<segment>" with the Vicon names converted by
-     * vicon_receiver::to_ros_name_token(). If the publisher cannot be created (invalid name, or
-     * topic already used by another segment whose names convert to the same tokens), the error is
-     * logged and the segment is never retried; TF is still broadcast for it, unless another
-     * segment already owns its TF frame.
-     */
-    void create_publisher_thread(const string subject_name, const string segment_name);
 };
 
 #endif // VICON_RECEIVER_NODE_HPP

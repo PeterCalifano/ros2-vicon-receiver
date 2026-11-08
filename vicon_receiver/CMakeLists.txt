@@ -126,7 +126,8 @@ target_include_directories(vicon_receiver_core PUBLIC
 )
 
 # Link dependencies (use imported targets consistently). PUBLIC because the
-# headers include the Vicon SDK and Boost headers.
+# headers include the Vicon SDK, whose library needs the vendored Boost on the
+# link line (the node itself no longer uses Boost).
 target_link_libraries(vicon_receiver_core PUBLIC
   vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP

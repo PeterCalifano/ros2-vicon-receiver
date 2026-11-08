@@ -3,8 +3,8 @@
  * @author PeterC (petercalifano.gs@gmail.com)
  * @brief Unit tests of the creation of segment publishers with Vicon names: names that are not
  *        valid in ROS (e.g. "g1-unitree-torso-cam") are converted instead of crashing the node,
- *        two segments never share a topic, and a failing publisher is skipped. The node is built
- *        with parameter overrides and never connects to a Vicon server.
+ *        two segments never share a topic or a TF frame, and a failing publisher is skipped. The
+ *        node is built with parameter overrides and never connects to a Vicon server.
  * @version 0.1
  * @date 2026-10-30
  */
@@ -21,6 +21,27 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "tf2_msgs/msg/tf_message.hpp"
+#include "tf2_ros/qos.hpp"
+
+/// Friend of ViconReceiverNode: reaches the private steps of the frame loop.
+class ViconReceiverNodeTestAccess
+{
+  public:
+    static void create_segment_publisher(ViconReceiverNode &node,
+                                         const std::string &subject_name,
+                                         const std::string &segment_name)
+    {
+        node.create_segment_publisher(subject_name, segment_name);
+    }
+
+    static void publish_segment_pose(ViconReceiverNode &node,
+                                     const std::string &subject_name,
+                                     const vicon_receiver_msgs::msg::SegmentState &segment)
+    {
+        node.publish_segment_pose(subject_name, segment, builtin_interfaces::msg::Time());
+    }
+};
 
 namespace
 {
@@ -86,7 +107,8 @@ TEST(ViconReceiverNodePublishers, ViconNameWithDashesGetsValidTopic)
     // Regression: the node aborted with InvalidTopicNameError on the lab subject name
     auto node = std::make_shared<ViconReceiverNode>(make_options("test_dashes"));
 
-    ASSERT_NO_THROW(node->create_publisher_thread("g1-unitree-torso-cam", "g1-unitree-torso-cam"));
+    ASSERT_NO_THROW(ViconReceiverNodeTestAccess::create_segment_publisher(
+        *node, "g1-unitree-torso-cam", "g1-unitree-torso-cam"));
 
     const std::string topic_name = "/test_dashes/g1_unitree_torso_cam/g1_unitree_torso_cam";
     EXPECT_EQ(wait_for_publishers(*node, topic_name, 1), 1U) << topic_name;
@@ -97,8 +119,8 @@ TEST(ViconReceiverNodePublishers, CollidingNamesDoNotShareATopic)
     // "a-b" and "a_b" convert to the same token: only the first segment gets the topic
     auto node = std::make_shared<ViconReceiverNode>(make_options("test_collision"));
 
-    node->create_publisher_thread("a-b", "x");
-    node->create_publisher_thread("a_b", "x");
+    ViconReceiverNodeTestAccess::create_segment_publisher(*node, "a-b", "x");
+    ViconReceiverNodeTestAccess::create_segment_publisher(*node, "a_b", "x");
 
     const std::string topic_name = "/test_collision/a_b/x";
     EXPECT_EQ(wait_for_publishers(*node, topic_name, 1), 1U);
@@ -115,6 +137,72 @@ TEST(ViconReceiverNodePublishers, InvalidNamespaceIsRejectedAtStartup)
     // reported at startup (std::invalid_argument, FATAL in main()), instead of a failure in
     // the publisher thread later on.
     EXPECT_THROW(ViconReceiverNode node(make_options("bad namespace")), std::invalid_argument);
+}
+
+TEST(ViconReceiverNodePublishers, FirstPoseOfASegmentIsPublished)
+{
+    // The publisher is created in the frame loop, so the first pose is not lost
+    auto node = std::make_shared<ViconReceiverNode>(make_options("test_first_pose"));
+
+    vicon_receiver_msgs::msg::SegmentState segment;
+    segment.name = "body";
+    segment.frame_id = "first_pose_body";
+    segment.orientation.w = 1.0;
+    ViconReceiverNodeTestAccess::publish_segment_pose(*node, "first_pose", segment);
+
+    EXPECT_EQ(wait_for_publishers(*node, "/test_first_pose/first_pose/body", 1), 1U);
+}
+
+TEST(ViconReceiverNodePublishers, CollidingTfFrameKeepsItsFirstOwner)
+{
+    // "tf_a_b"/"c" and "tf_a"/"b_c" have different topics but the same TF child frame
+    const std::string frame = "tf_a_b_c";
+    auto node = std::make_shared<ViconReceiverNode>(make_options("test_tf_collision"));
+    auto listener = rclcpp::Node::make_shared("tf_collision_listener");
+
+    std::vector<double> received_x;
+    const auto subscription = listener->create_subscription<tf2_msgs::msg::TFMessage>(
+        "/tf",
+        tf2_ros::DynamicListenerQoS(),
+        [&received_x, &frame](const tf2_msgs::msg::TFMessage &message)
+        {
+            for (const auto &transform : message.transforms)
+            {
+                if (transform.child_frame_id == frame)
+                {
+                    received_x.push_back(transform.transform.translation.x);
+                }
+            }
+        });
+    const auto deadline = std::chrono::steady_clock::now() + kGraphTimeout;
+    while (subscription->get_publisher_count() == 0 && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    ASSERT_GE(subscription->get_publisher_count(), 1U);
+
+    vicon_receiver_msgs::msg::SegmentState first;
+    first.name = "c";
+    first.frame_id = frame;
+    first.position.x = 1.0;
+    first.orientation.w = 1.0;
+    vicon_receiver_msgs::msg::SegmentState second = first;
+    second.name = "b_c";
+    second.position.x = 2.0;
+
+    ViconReceiverNodeTestAccess::publish_segment_pose(*node, "tf_a_b", first);
+    ViconReceiverNodeTestAccess::publish_segment_pose(*node, "tf_a", second);
+    ViconReceiverNodeTestAccess::publish_segment_pose(*node, "tf_a_b", first);
+
+    // The refused segment could arrive at any point: keep listening a little after the last one
+    const auto listen_until = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (std::chrono::steady_clock::now() < listen_until)
+    {
+        rclcpp::spin_some(listener);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_EQ(received_x, (std::vector<double>{1.0, 1.0}));
 }
 
 TEST(ViconReceiverNodeConnection, LostConnectionStopsTheFrameLoop)

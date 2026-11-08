@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -350,5 +351,38 @@ namespace frame_conversion_tests
         EXPECT_THROW(vicon_receiver::to_time_msg(-1.0), std::invalid_argument);
         EXPECT_THROW(vicon_receiver::to_time_msg(std::numeric_limits<double>::quiet_NaN()),
                      std::invalid_argument);
+    }
+
+    TEST(SegmentPoseInWorld, AppliesTheStaticTransformAndTakesTheStamp)
+    {
+        vicon_receiver_msgs::msg::SegmentState segment;
+        segment.position.x = 1.0;
+        segment.orientation.w = 1.0;
+
+        // Vicon frame at (1, 2, 3) in the world, turned by 90 degrees about z
+        const double half_sqrt2 = std::sqrt(0.5);
+        geometry_msgs::msg::TransformStamped vicon_in_world;
+        vicon_in_world.header.frame_id = "map";
+        vicon_in_world.child_frame_id = "vicon";
+        vicon_in_world.transform.translation.x = 1.0;
+        vicon_in_world.transform.translation.y = 2.0;
+        vicon_in_world.transform.translation.z = 3.0;
+        vicon_in_world.transform.rotation.z = half_sqrt2;
+        vicon_in_world.transform.rotation.w = half_sqrt2;
+
+        builtin_interfaces::msg::Time stamp;
+        stamp.sec = 12;
+        stamp.nanosec = 34;
+
+        const geometry_msgs::msg::PoseStamped pose =
+            vicon_receiver::make_segment_pose_in_world(segment, vicon_in_world, stamp);
+
+        EXPECT_EQ(pose.header.frame_id, "map");
+        EXPECT_EQ(pose.header.stamp, stamp);
+        EXPECT_NEAR(pose.pose.position.x, 1.0, 1e-12);
+        EXPECT_NEAR(pose.pose.position.y, 3.0, 1e-12);
+        EXPECT_NEAR(pose.pose.position.z, 3.0, 1e-12);
+        EXPECT_NEAR(pose.pose.orientation.z, half_sqrt2, 1e-12);
+        EXPECT_NEAR(pose.pose.orientation.w, half_sqrt2, 1e-12);
     }
 } // namespace frame_conversion_tests

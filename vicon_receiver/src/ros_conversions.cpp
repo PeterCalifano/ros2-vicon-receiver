@@ -12,6 +12,8 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+
 namespace vicon_receiver
 {
     namespace sdk = ViconDataStreamSDK::CPP;
@@ -187,6 +189,26 @@ namespace vicon_receiver
         transform.transform.translation.z = segment.position.z;
         transform.transform.rotation = segment.orientation;
         return transform;
+    }
+
+    geometry_msgs::msg::PoseStamped
+    make_segment_pose_in_world(const vicon_receiver_msgs::msg::SegmentState &segment,
+                               const geometry_msgs::msg::TransformStamped &vicon_in_world,
+                               const builtin_interfaces::msg::Time &stamp)
+    {
+        geometry_msgs::msg::PoseStamped pose_in_vicon;
+        pose_in_vicon.pose.position.x = segment.position.x;
+        pose_in_vicon.pose.position.y = segment.position.y;
+        pose_in_vicon.pose.position.z = segment.position.z;
+        pose_in_vicon.pose.orientation = segment.orientation;
+
+        // doTransform() takes the header of the result from the transform
+        geometry_msgs::msg::TransformStamped stamped_vicon_in_world = vicon_in_world;
+        stamped_vicon_in_world.header.stamp = stamp;
+
+        geometry_msgs::msg::PoseStamped pose_in_world;
+        tf2::doTransform(pose_in_vicon, pose_in_world, stamped_vicon_in_world);
+        return pose_in_world;
     }
 
     builtin_interfaces::msg::Time to_time_msg(double seconds)
