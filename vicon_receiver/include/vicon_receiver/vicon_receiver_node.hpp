@@ -70,7 +70,11 @@ class ViconReceiverNode : public rclcpp::Node
     /// Segments ("subject/segment") whose publisher could not be created; never retried.
     std::set<std::string> failed_publishers;
     /// Owner ("subject/segment") of each topic, to refuse two segments on the same topic.
-    std::map<std::string, std::string> topic_owners;
+    vicon_receiver::NameOwnership topic_owners;
+    /// Owner ("subject/segment") of each TF child frame (frame loop only, no lock needed).
+    vicon_receiver::NameOwnership tf_frame_owners;
+    /// Segments refused a TF frame (logged once each).
+    std::set<std::string> refused_tf_segments;
 
     geometry_msgs::msg::TransformStamped static_tf;
     string world_frame;
@@ -238,7 +242,8 @@ class ViconReceiverNode : public rclcpp::Node
      * The topic is "<namespace>/<subject>/<segment>" with the Vicon names converted by
      * vicon_receiver::to_ros_name_token(). If the publisher cannot be created (invalid name, or
      * topic already used by another segment whose names convert to the same tokens), the error is
-     * logged and the segment is never retried; TF is still broadcast for it.
+     * logged and the segment is never retried; TF is still broadcast for it, unless another
+     * segment already owns its TF frame.
      */
     void create_publisher_thread(const string subject_name, const string segment_name);
 };

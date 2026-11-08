@@ -119,10 +119,11 @@ namespace vicon_receiver
     /**
      * @brief Enable TCP keepalive on a connected socket so that a dead connection fails.
      *
-     * While no data arrives, the kernel sends a probe every second; after timeout_s seconds
-     * without any answer (server down, network or cable gone), the connection is closed with an
-     * error, which the Vicon SDK reports as NotConnected. An idle but alive server answers the
-     * probes, so the connection stays open.
+     * While no data arrives, the kernel sends a probe every second (for timeouts above 128 s,
+     * every ceil(timeout_s / 128) seconds, as Linux allows at most 127 probes); after about
+     * timeout_s seconds without any answer (server down, network or cable gone), the connection
+     * is closed with an error, which the Vicon SDK reports as NotConnected. An idle but alive
+     * server answers the probes, so the connection stays open.
      *
      * @param socket_fd  Connected TCP socket.
      * @param timeout_s  Seconds without answer before the connection fails (>= 2).

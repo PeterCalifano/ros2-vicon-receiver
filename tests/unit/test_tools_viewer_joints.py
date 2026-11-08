@@ -8,8 +8,6 @@ yourdfpy); it is skipped otherwise. The adapter is tested without ROS or unitree
 
 from __future__ import annotations
 
-import importlib.util
-import socket
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,41 +17,20 @@ import pytest
 import yaml
 from scipy.spatial.transform import Rotation
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, VIEWER_CONFIG, Subject_at_origin, ViewerScene, Write_viewer_config
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
     Joint_configuration,
     Joint_states_markdown,
     LatestJointStates,
-    ViewerSegment,
-    ViewerSubject,
 )
 from vicon_receiver_tools.viewer_config import Load_viewer_config
 
-VIEWER_CONFIG: Path = REPO_ROOT / "config" / "viewer.yaml"
 ADAPTER_CONFIG: Path = REPO_ROOT / "config" / "g1_joint_states.yaml"
 
 # The adapter is a script: import it as a module
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import g1_joint_states  # noqa: E402
-
-# Tiny URDF: base -> torso (revolute about z, 1 m up), camera fixed 0.1 m ahead of the torso
-JOINTED_URDF: str = """<?xml version="1.0"?>
-<robot name="jointed">
-  <link name="base"/>
-  <link name="torso"/>
-  <link name="camera"/>
-  <joint name="waist" type="revolute">
-    <parent link="base"/><child link="torso"/>
-    <origin xyz="0 0 1.0" rpy="0 0 0"/><axis xyz="0 0 1"/>
-    <limit lower="-2" upper="2" effort="1" velocity="1"/>
-  </joint>
-  <joint name="camera_mount" type="fixed">
-    <parent link="torso"/><child link="camera"/><origin xyz="0.1 0 0" rpy="0 0 0"/>
-  </joint>
-</robot>
-"""
-
 
 def Joint_state(names: list[str], positions: list[float]) -> SimpleNamespace:
     """Object with the fields of a sensor_msgs/JointState that the viewer reads."""
@@ -126,15 +103,6 @@ def test_joint_states_markdown() -> None:
 # -------------------------------------------------------------------------------------------------
 # Viewer config: optional topic
 # -------------------------------------------------------------------------------------------------
-def Write_viewer_config(tmp_path: Path, edit) -> Path:
-    """Copy of config/viewer.yaml with the robot section edited by a function."""
-    document_ = yaml.safe_load(VIEWER_CONFIG.read_text(encoding="utf-8"))
-    edit(document_)
-    path_ = tmp_path / "viewer.yaml"
-    path_.write_text(yaml.safe_dump(document_, sort_keys=False), encoding="utf-8")
-    return path_
-
-
 def test_repository_viewer_config_reads_joint_states() -> None:
     """The repository config takes the joint angles from /joint_states."""
     assert Load_viewer_config(VIEWER_CONFIG).robot.joint_states_topic == "/joint_states"
@@ -158,67 +126,26 @@ def test_empty_joint_states_topic_is_rejected(tmp_path: Path) -> None:
 # -------------------------------------------------------------------------------------------------
 # Viewer scene: the root and the cameras follow the joints around the tracked link
 # -------------------------------------------------------------------------------------------------
-def Free_port() -> int:
-    """A free local TCP port for a viser server."""
-    with socket.socket() as socket_:
-        socket_.bind(("127.0.0.1", 0))
-        return socket_.getsockname()[1]
-
-
-@pytest.mark.skipif(
-    importlib.util.find_spec("viser") is None or importlib.util.find_spec("yourdfpy") is None,
-    reason="needs viser and yourdfpy (conda environment of environment.yml)",
-)
-def test_root_and_cameras_follow_the_joints(tmp_path: Path) -> None:
+def test_root_and_cameras_follow_the_joints(jointed_robot_scene: ViewerScene) -> None:
     """With the waist turned, the root turns around the tracked torso; the camera stays on it."""
-    import viser
+    viewer_ = jointed_robot_scene.viewer
+    # Subject at the origin, identity mount (no mount file): the torso is the world frame
+    viewer_._update_robot(Subject_at_origin(jointed_robot_scene.config.robot.subject, "robot"))
+    np.testing.assert_allclose(viewer_._robot_frame.position, [0.0, 0.0, -1.0], atol=1e-9)
+    np.testing.assert_allclose(viewer_._robot_frame.wxyz, [1.0, 0.0, 0.0, 0.0], atol=1e-9)
 
-    from vicon_receiver_tools.viewer import ViserLiveViewer
+    joints_ = LatestJointStates()
+    joints_.put_message(Joint_state(["waist"], [0.5]))
+    viewer_.update_joints(joints_)
 
-    (tmp_path / "model").mkdir()
-    (tmp_path / "model" / "jointed.urdf").write_text(JOINTED_URDF, encoding="utf-8")
-
-    def _Edit(document_: dict) -> None:
-        document_["viewer"]["port"] = Free_port()
-        document_["robot"].update(
-            directory="model", urdf="jointed.urdf", mount_link="torso", mount_file="no_mount.yaml"
-        )
-        document_["cameras"] = [dict(document_["cameras"][0], name="cam", frame="camera")]
-
-    config_ = Load_viewer_config(Write_viewer_config(tmp_path, _Edit))
-    server_ = viser.ViserServer(host="127.0.0.1", port=config_.viewer.port, verbose=False)
-    try:
-        viewer_ = ViserLiveViewer(config_, tmp_path, server_)
-        # Subject at the origin, identity mount (no mount file): the torso is the world frame
-        subject_ = ViewerSubject(
-            name=config_.robot.subject,
-            ros_name="robot",
-            quality=1.0,
-            segments=[
-                ViewerSegment(
-                    name="root", position=np.zeros(3), wxyz=np.array([1.0, 0.0, 0.0, 0.0]), occluded=False
-                )
-            ],
-            markers=[],
-        )
-        viewer_._update_robot(subject_)
-        np.testing.assert_allclose(viewer_._robot_frame.position, [0.0, 0.0, -1.0], atol=1e-9)
-        np.testing.assert_allclose(viewer_._robot_frame.wxyz, [1.0, 0.0, 0.0, 0.0], atol=1e-9)
-
-        joints_ = LatestJointStates()
-        joints_.put_message(Joint_state(["waist"], [0.5]))
-        viewer_.update_joints(joints_)
-
-        # Torso turned by +0.5 rad about z relative to the base: the base is at -0.5 rad in the
-        # (tracked) torso frame, still 1 m below it
-        expected_wxyz_ = Rotation.from_euler("z", -0.5).as_quat(scalar_first=True)
-        np.testing.assert_allclose(viewer_._robot_frame.position, [0.0, 0.0, -1.0], atol=1e-9)
-        np.testing.assert_allclose(np.abs(viewer_._robot_frame.wxyz), np.abs(expected_wxyz_), atol=1e-9)
-        # The camera is fixed to the tracked torso: it does not move
-        np.testing.assert_allclose(viewer_._camera_handles["cam"].position, [0.1, 0.0, 0.0], atol=1e-9)
-        assert "1/1 from /joint_states" in viewer_._joints_line
-    finally:
-        server_.stop()
+    # Torso turned by +0.5 rad about z relative to the base: the base is at -0.5 rad in the
+    # (tracked) torso frame, still 1 m below it
+    expected_wxyz_ = Rotation.from_euler("z", -0.5).as_quat(scalar_first=True)
+    np.testing.assert_allclose(viewer_._robot_frame.position, [0.0, 0.0, -1.0], atol=1e-9)
+    np.testing.assert_allclose(np.abs(viewer_._robot_frame.wxyz), np.abs(expected_wxyz_), atol=1e-9)
+    # The camera is fixed to the tracked torso: it does not move
+    np.testing.assert_allclose(viewer_._camera_handles["cam"].position, [0.1, 0.0, 0.0], atol=1e-9)
+    assert "1/1 from /joint_states" in viewer_._joints_line
 
 
 # -------------------------------------------------------------------------------------------------

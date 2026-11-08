@@ -37,8 +37,14 @@ namespace vicon_receiver
         /// State of an established connection in /proc/net/tcp (hexadecimal).
         constexpr const char *kEstablishedState = "01";
 
-        /// Seconds without data before the first probe, and between probes.
-        constexpr int kKeepaliveIntervalS = 1;
+        /// Largest TCP_KEEPCNT accepted by Linux (MAX_TCP_KEEPCNT); 128 gives EINVAL.
+        constexpr int kMaxKeepaliveProbes = 127;
+
+        /// Integer division rounded up, for positive operands.
+        int divide_rounding_up(int dividend, int divisor)
+        {
+            return (dividend + divisor - 1) / divisor;
+        }
 
         /// Set one integer socket option, or throw with its name.
         void set_option(int socket_fd, int level, int option, int value, const char *name)
@@ -373,12 +379,15 @@ namespace vicon_receiver
                                         std::to_string(timeout_s));
         }
 
-        // First probe after 1 s without data, then one per second; the connection fails when
-        // timeout_s - 1 probes in a row got no answer
+        // First probe after one interval without data, then one per interval, so the timeout
+        // spans probe_count + 1 intervals. Up to 128 s: one probe per second, timeout_s - 1
+        // probes. Longer timeouts space the probes so that their number stays within the limit.
+        const int interval_s = divide_rounding_up(timeout_s, kMaxKeepaliveProbes + 1);
+        const int probe_count = divide_rounding_up(timeout_s, interval_s) - 1;
         set_option(socket_fd, SOL_SOCKET, SO_KEEPALIVE, 1, "SO_KEEPALIVE");
-        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, kKeepaliveIntervalS, "TCP_KEEPIDLE");
-        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, kKeepaliveIntervalS, "TCP_KEEPINTVL");
-        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, timeout_s - 1, "TCP_KEEPCNT");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, interval_s, "TCP_KEEPIDLE");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, interval_s, "TCP_KEEPINTVL");
+        set_option(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, probe_count, "TCP_KEEPCNT");
         // Also bound the time sent data may stay unacknowledged (requests to the server)
         set_option(socket_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, timeout_s * 1000, "TCP_USER_TIMEOUT");
     }

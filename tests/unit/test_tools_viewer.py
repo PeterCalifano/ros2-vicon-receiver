@@ -1,18 +1,20 @@
 """Unit tests of the live viewer parts that need neither a browser nor ROS 2.
 
 Covers the conversion of ViconFrame messages into view data, marker colours, pose helpers, trails,
-the telemetry text and the thread-safe frame buffer, plus the viewer config and mount files.
+the telemetry text and the thread-safe frame buffer, plus the viewer config and mount files. One
+test runs the scene on a local viser server (conda environment; skipped otherwise).
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from conftest import REPO_ROOT
+from conftest import REPO_ROOT, Subject_at_origin, ViewerScene
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
     CAMERA_OFFSET_M,
@@ -289,3 +291,52 @@ def test_viewer_config_rejects_a_pair_of_one_marker(tmp_path: Path) -> None:
     config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match="left and right are the same marker"):
         Load_viewer_config(config_)
+
+
+# -------------------------------------------------------------------------------------------------
+# Scene
+# -------------------------------------------------------------------------------------------------
+def Scene_frame(number: int, subjects: list) -> ViewerFrame:
+    """ViewerFrame with the given subjects."""
+    return ViewerFrame(
+        frame_number=number, frames_dropped=0, latency_s=0.03, any_occluded=False, subjects=subjects
+    )
+
+
+def test_objects_of_a_removed_subject_are_hidden(jointed_robot_scene: ViewerScene) -> None:
+    """A subject missing from the latest frame (removed from the Tracker) leaves no frozen axes,
+    markers or robot behind; it shows again when it comes back."""
+    viewer_ = jointed_robot_scene.viewer
+    robot_ = Subject_at_origin(jointed_robot_scene.config.robot.subject, "robot")
+    other_ = Subject_at_origin("wand", "wand")
+    buffer_ = LatestFrameBuffer(trail_length=10)
+
+    viewer_.update(Scene_frame(1, [robot_, other_]), buffer_)
+    assert viewer_._segment_handles["wand/root"].visible
+    assert viewer_._marker_handles["wand"].visible
+    assert viewer_._robot_frame.visible
+
+    viewer_.update(Scene_frame(2, []), buffer_)
+    assert not viewer_._segment_handles["wand/root"].visible
+    assert not viewer_._segment_handles["robot/root"].visible
+    assert not viewer_._marker_handles["wand"].visible
+    assert not viewer_._robot_frame.visible
+    assert not viewer_._camera_handles["cam"].visible
+
+    viewer_.update(Scene_frame(3, [robot_, other_]), buffer_)
+    assert viewer_._segment_handles["wand/root"].visible
+    assert viewer_._robot_frame.visible
+
+
+def test_robot_without_segments_is_hidden(jointed_robot_scene: ViewerScene) -> None:
+    """A robot subject still in the stream but with no segment left does not stay frozen."""
+    viewer_ = jointed_robot_scene.viewer
+    robot_ = Subject_at_origin(jointed_robot_scene.config.robot.subject, "robot")
+    buffer_ = LatestFrameBuffer(trail_length=10)
+
+    viewer_.update(Scene_frame(1, [robot_]), buffer_)
+    assert viewer_._robot_frame.visible
+
+    viewer_.update(Scene_frame(2, [replace(robot_, segments=[])]), buffer_)
+    assert not viewer_._robot_frame.visible
+    assert not viewer_._camera_handles["cam"].visible

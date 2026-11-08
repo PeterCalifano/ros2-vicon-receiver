@@ -84,6 +84,18 @@ namespace vicon_receiver
                to_ros_name_token(segment_name);
     }
 
+    bool NameOwnership::claim(const std::string &name, const std::string &owner)
+    {
+        const auto inserted = owners_.emplace(name, owner);
+        return inserted.second || inserted.first->second == owner;
+    }
+
+    std::string NameOwnership::owner_of(const std::string &name) const
+    {
+        const auto owner_it = owners_.find(name);
+        return owner_it == owners_.end() ? std::string() : owner_it->second;
+    }
+
     // --------------------------------------------------------------------------------------------
     // SDK results -> messages, transforms and times
     // --------------------------------------------------------------------------------------------

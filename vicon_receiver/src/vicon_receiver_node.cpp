@@ -719,6 +719,7 @@ void ViconReceiverNode::publish_segment_pose(const std::string &subject_name,
                                              const builtin_interfaces::msg::Time &stamp)
 {
     const std::string &segment_name = segment.name;
+    const std::string key = subject_name + "/" + segment_name;
 
     // TF from the Vicon frame to the segment frame, stamped with the acquisition time
     const geometry_msgs::msg::TransformStamped tf_msg =
@@ -729,8 +730,7 @@ void ViconReceiverNode::publish_segment_pose(const std::string &subject_name,
     if (lock.owns_lock())
     {
         // Check if a publisher exists for the segment
-        map<string, SegmentPosePublisher>::iterator pub_it =
-            pub_map.find(subject_name + "/" + segment_name);
+        map<string, SegmentPosePublisher>::iterator pub_it = pub_map.find(key);
         if (pub_it != pub_map.end())
         {
             SegmentPosePublisher &pub = pub_it->second;
@@ -766,7 +766,6 @@ void ViconReceiverNode::publish_segment_pose(const std::string &subject_name,
         {
             // Create a publisher if it doesn't exist, de-duplicating concurrent attempts.
             // Segments whose publisher failed once are not retried (error already logged).
-            std::string key = subject_name + "/" + segment_name;
             if (failed_publishers.find(key) != failed_publishers.end())
             {
                 lock.unlock();
@@ -783,6 +782,22 @@ void ViconReceiverNode::publish_segment_pose(const std::string &subject_name,
                 lock.unlock();
             }
         }
+    }
+
+    // Two segments whose names convert to the same frame id would alternate on one TF frame:
+    // the first segment keeps it, the other is not broadcast
+    if (!tf_frame_owners.claim(tf_msg.child_frame_id, key))
+    {
+        if (refused_tf_segments.insert(key).second)
+        {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Not broadcasting TF for segment '%s': frame '%s' is already used by "
+                         "segment '%s'. Rename one of them in Vicon Tracker.",
+                         key.c_str(),
+                         tf_msg.child_frame_id.c_str(),
+                         tf_frame_owners.owner_of(tf_msg.child_frame_id).c_str());
+        }
+        return;
     }
 
     // Broadcast the transform
@@ -875,15 +890,15 @@ void ViconReceiverNode::create_publisher_thread(const string subject_name,
     boost::mutex::scoped_lock lock(mutex);
 
     // Two segments whose names convert to the same tokens would share a topic: refuse the second
-    const auto owner_it = topic_owners.find(topic_name);
-    if (owner_it != topic_owners.end() && owner_it->second != key)
+    const std::string topic_owner = topic_owners.owner_of(topic_name);
+    if (!topic_owner.empty() && topic_owner != key)
     {
         RCLCPP_ERROR(this->get_logger(),
                      "Not publishing segment '%s': topic '%s' is already used by segment '%s'. "
                      "Rename one of them in Vicon Tracker.",
                      key.c_str(),
                      topic_name.c_str(),
-                     owner_it->second.c_str());
+                     topic_owner.c_str());
         failed_publishers.insert(key);
         pending_publishers.erase(key);
         return;
@@ -895,7 +910,7 @@ void ViconReceiverNode::create_publisher_thread(const string subject_name,
     {
         pub_map.insert(std::map<std::string, SegmentPosePublisher>::value_type(
             key, SegmentPosePublisher(topic_name, this)));
-        topic_owners[topic_name] = key;
+        topic_owners.claim(topic_name, key);
     }
     catch (const std::exception &error)
     {

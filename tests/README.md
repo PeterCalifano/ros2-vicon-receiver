@@ -54,7 +54,7 @@ tests/
     test_static_checks.py              shellcheck and clang-format (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
-    test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs
+    test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs, hiding of removed subjects (viser)
     test_tools_viewer_joints.py        joint states: keep-last buffer, optional topic, root/frustums follow the joints (viser), G1 adapter
     test_tools_mount.py                robot model access and mount estimate (head/shoulder pairs, synthetic robot; needs the conda environment)
     test_tools_export.py               export to CSV without ROS (fake reader), partial-output cleanup

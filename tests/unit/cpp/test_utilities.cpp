@@ -233,6 +233,28 @@ namespace tcp_keepalive_tests
         EXPECT_EQ(get_option(connection.client, IPPROTO_TCP, TCP_USER_TIMEOUT), 5000);
     }
 
+    TEST(TcpKeepalive, LongTimeoutsStayWithinTheProbeLimit)
+    {
+        // Linux rejects more than 127 probes: longer timeouts space the probes instead
+        LocalConnection connection;
+        ASSERT_GE(connection.client, 0);
+
+        enable_tcp_keepalive(connection.client, 128);
+        EXPECT_EQ(get_option(connection.client, IPPROTO_TCP, TCP_KEEPINTVL), 1);
+        EXPECT_EQ(get_option(connection.client, IPPROTO_TCP, TCP_KEEPCNT), 127);
+
+        // Largest accepted connection_timeout_s
+        enable_tcp_keepalive(connection.client, 3600);
+        const int interval_s = get_option(connection.client, IPPROTO_TCP, TCP_KEEPINTVL);
+        const int probe_count = get_option(connection.client, IPPROTO_TCP, TCP_KEEPCNT);
+        EXPECT_EQ(interval_s, 29);
+        EXPECT_EQ(get_option(connection.client, IPPROTO_TCP, TCP_KEEPIDLE), interval_s);
+        EXPECT_LE(probe_count, 127);
+        // First probe after one interval, then probe_count intervals: about the timeout
+        EXPECT_NEAR((probe_count + 1) * interval_s, 3600, interval_s);
+        EXPECT_EQ(get_option(connection.client, IPPROTO_TCP, TCP_USER_TIMEOUT), 3600000);
+    }
+
     TEST(TcpKeepalive, TooShortTimeoutIsRejected)
     {
         LocalConnection connection;

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 import yaml
 
@@ -158,6 +159,95 @@ class ShellRunner:
 def shell() -> ShellRunner:
     """Runner for common.sh functions and scripts, in the current environment."""
     return ShellRunner(base_env=dict(os.environ))
+
+
+# -------------------------------------------------------------------------------------------------
+# Live viewer scene
+# -------------------------------------------------------------------------------------------------
+VIEWER_CONFIG: Path = REPO_ROOT / "config" / "viewer.yaml"
+
+# Tiny URDF: base -> torso (revolute about z, 1 m up), camera fixed 0.1 m ahead of the torso
+JOINTED_URDF: str = """<?xml version="1.0"?>
+<robot name="jointed">
+  <link name="base"/>
+  <link name="torso"/>
+  <link name="camera"/>
+  <joint name="waist" type="revolute">
+    <parent link="base"/><child link="torso"/>
+    <origin xyz="0 0 1.0" rpy="0 0 0"/><axis xyz="0 0 1"/>
+    <limit lower="-2" upper="2" effort="1" velocity="1"/>
+  </joint>
+  <joint name="camera_mount" type="fixed">
+    <parent link="torso"/><child link="camera"/><origin xyz="0.1 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>
+"""
+
+
+def Write_viewer_config(tmp_path: Path, edit: Callable[[dict[str, Any]], None]) -> Path:
+    """Copy of config/viewer.yaml, changed by a function that edits the parsed document."""
+    document_ = yaml.safe_load(VIEWER_CONFIG.read_text(encoding="utf-8"))
+    edit(document_)
+    path_ = tmp_path / "viewer.yaml"
+    path_.write_text(yaml.safe_dump(document_, sort_keys=False), encoding="utf-8")
+    return path_
+
+
+def Subject_at_origin(name: str, ros_name: str) -> Any:
+    """ViewerSubject with one visible segment at the origin and one visible marker."""
+    from vicon_receiver_tools.viewer import ViewerMarker, ViewerSegment, ViewerSubject
+
+    return ViewerSubject(
+        name=name,
+        ros_name=ros_name,
+        quality=1.0,
+        segments=[
+            ViewerSegment(name="root", position=np.zeros(3), wxyz=np.array([1.0, 0.0, 0.0, 0.0]), occluded=False)
+        ],
+        markers=[ViewerMarker(name="m1", position=np.zeros(3), camera_count=4, occluded=False)],
+    )
+
+
+@dataclass
+class ViewerScene:
+    """Viewer on a local viser server.
+
+    Attributes:
+        config: Its ViewerConfig.
+        viewer: The ViserLiveViewer.
+    """
+
+    config: Any
+    viewer: Any
+
+
+@pytest.fixture
+def jointed_robot_scene(tmp_path: Path) -> Iterator[ViewerScene]:
+    """Viewer of JOINTED_URDF (identity mount) on a local server; skipped without viser/yourdfpy."""
+    viser_ = pytest.importorskip("viser")
+    pytest.importorskip("yourdfpy")
+    from vicon_receiver_tools.viewer import ViserLiveViewer
+    from vicon_receiver_tools.viewer_config import Load_viewer_config
+
+    (tmp_path / "model").mkdir()
+    (tmp_path / "model" / "jointed.urdf").write_text(JOINTED_URDF, encoding="utf-8")
+    with socket.socket() as free_socket_:
+        free_socket_.bind(("127.0.0.1", 0))
+        port_ = free_socket_.getsockname()[1]
+
+    def _Edit(document_: dict[str, Any]) -> None:
+        document_["viewer"]["port"] = port_
+        document_["robot"].update(
+            directory="model", urdf="jointed.urdf", mount_link="torso", mount_file="no_mount.yaml"
+        )
+        document_["cameras"] = [dict(document_["cameras"][0], name="cam", frame="camera")]
+
+    config_ = Load_viewer_config(Write_viewer_config(tmp_path, _Edit))
+    server_ = viser_.ViserServer(host="127.0.0.1", port=port_, verbose=False)
+    try:
+        yield ViewerScene(config=config_, viewer=ViserLiveViewer(config_, tmp_path, server_))
+    finally:
+        server_.stop()
 
 
 # -------------------------------------------------------------------------------------------------

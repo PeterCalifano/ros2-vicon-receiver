@@ -119,6 +119,11 @@ def Is_unit_quaternion(quaternion: np.ndarray) -> bool:
     return bool(abs(np.linalg.norm(quaternion) - 1.0) <= QUATERNION_NORM_TOLERANCE)
 
 
+def Segment_key(subject_ros_name: str, segment_name: str) -> str:
+    """Key of a segment in the scene and in the trails."""
+    return f"{subject_ros_name}/{segment_name}"
+
+
 def Viewer_segment_from_message(segment: Any) -> ViewerSegment:
     """Convert a SegmentState; a segment without a valid rotation counts as occluded."""
     # Vicon/ROS order x, y, z, w -> viser order w, x, y, z
@@ -327,7 +332,7 @@ class LatestFrameBuffer:
             for segment_ in subject_.segments:
                 if segment_.occluded:
                     continue
-                key_ = f"{subject_.ros_name}/{segment_.name}"
+                key_ = Segment_key(subject_.ros_name, segment_.name)
                 trail_ = self._trails.setdefault(key_, deque(maxlen=self.trail_length))
                 trail_.append(segment_.position.copy())
 
@@ -404,6 +409,7 @@ class ViserLiveViewer:
         self._repo_root = repo_root
         self._server = server
         self._segment_handles: dict[str, Any] = {}
+        self._trail_handles: dict[str, Any] = {}
         self._marker_handles: dict[str, Any] = {}
         self._last_telemetry_s = 0.0
         self._last_trail_s = 0.0
@@ -482,9 +488,7 @@ class ViserLiveViewer:
             )
 
         # Nothing is shown before the first valid pose of the subject
-        self._robot_frame.visible = False
-        for handle_ in self._camera_handles.values():
-            handle_.visible = False
+        self._set_robot_visible(False)
         return f"robot model {robot_.urdf} attached to {robot_.subject} at {robot_.mount_link}"
 
     def _build_gui(self) -> None:
@@ -541,7 +545,7 @@ class ViserLiveViewer:
 
         for subject_ in frame.subjects:
             for segment_ in subject_.segments:
-                key_ = f"{subject_.ros_name}/{segment_.name}"
+                key_ = Segment_key(subject_.ros_name, segment_.name)
                 handle_ = self._segment_handles.get(key_)
                 if handle_ is None:
                     handle_ = scene_.add_frame(f"/subjects/{key_}", axes_length=0.15, axes_radius=0.006)
@@ -553,7 +557,7 @@ class ViserLiveViewer:
 
                 segments_ = Trail_segments(buffer.trail(key_)) if redraw_trails_ else np.zeros((0, 2, 3))
                 if len(segments_) > 0:
-                    scene_.add_line_segments(
+                    self._trail_handles[key_] = scene_.add_line_segments(
                         f"/trails/{key_}", points=segments_, colors=COLOR_TRAIL, thickness=0.004
                     )
 
@@ -561,7 +565,36 @@ class ViserLiveViewer:
             if subject_.name == self._config.robot.subject:
                 self._update_robot(subject_)
 
+        self._hide_absent(frame)
         self.update_telemetry(frame, buffer)
+
+    def _hide_absent(self, frame: ViewerFrame) -> None:
+        """Hide what belongs to subjects or segments missing from the frame (removed from the
+        Tracker), instead of leaving it frozen at its last pose."""
+        subjects_ = {subject_.ros_name for subject_ in frame.subjects}
+        segments_ = {
+            Segment_key(subject_.ros_name, segment_.name)
+            for subject_ in frame.subjects
+            for segment_ in subject_.segments
+        }
+        for handles_ in (self._segment_handles, self._trail_handles):
+            for key_, handle_ in handles_.items():
+                if key_ not in segments_:
+                    handle_.visible = False
+        for ros_name_, handle_ in self._marker_handles.items():
+            if ros_name_ not in subjects_:
+                handle_.visible = False
+        robot_present_ = any(
+            subject_.name == self._config.robot.subject and subject_.segments for subject_ in frame.subjects
+        )
+        if not robot_present_ and self._robot_frame is not None:
+            self._set_robot_visible(False)
+
+    def _set_robot_visible(self, visible: bool) -> None:
+        """Show or hide the robot model and the camera frustums together."""
+        self._robot_frame.visible = visible
+        for handle_ in self._camera_handles.values():
+            handle_.visible = visible
 
     def update_telemetry(self, frame: ViewerFrame, buffer: LatestFrameBuffer) -> None:
         """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), also without new frames."""
@@ -629,11 +662,8 @@ class ViserLiveViewer:
         if self._robot_frame is None or not subject.segments:
             return
         segment_ = subject.segments[0]
-        visible_ = not segment_.occluded
-        self._robot_frame.visible = visible_
-        for handle_ in self._camera_handles.values():
-            handle_.visible = visible_
-        if not visible_:
+        self._set_robot_visible(not segment_.occluded)
+        if segment_.occluded:
             return
 
         first_pose_ = self._mount_in_world is None

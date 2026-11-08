@@ -10,6 +10,7 @@
 #define VICON_RECEIVER_ROS_CONVERSIONS_HPP
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,29 @@ namespace vicon_receiver
     std::string make_segment_topic_name(const std::string &topic_namespace,
                                         const std::string &subject_name,
                                         const std::string &segment_name);
+
+    /**
+     * @brief First-come ownership of the ROS names derived from Vicon names (topics, TF frames).
+     *
+     * Two segments whose names convert to the same token (e.g. "robot-a" and "robot_a") must not
+     * share a topic or a TF frame: the first segment that claims a name keeps it.
+     */
+    class NameOwnership
+    {
+      public:
+        /**
+         * @brief Claim @p name for @p owner.
+         * @return true if the name was free (now owned by @p owner) or already owned by it,
+         *         false if another owner has it.
+         */
+        bool claim(const std::string &name, const std::string &owner);
+
+        /// Owner of @p name, empty if nobody claimed it.
+        std::string owner_of(const std::string &name) const;
+
+      private:
+        std::map<std::string, std::string> owners_;
+    };
 
     // --------------------------------------------------------------------------------------------
     // SDK results -> messages, transforms and times

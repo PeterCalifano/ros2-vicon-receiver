@@ -132,6 +132,25 @@ namespace name_conversion_tests
         const std::string topic_name = vicon_receiver::make_segment_topic_name("vicon", "a/b", "c");
         EXPECT_EQ(topic_name, "vicon/a_b/c");
     }
+
+    TEST(NameOwnership, FirstSegmentKeepsACollidingName)
+    {
+        // "a_b"/"c" and "a"/"b_c" both give the TF frame "a_b_c"
+        vicon_receiver::NameOwnership frames;
+        const std::string frame = vicon_receiver::make_segment_frame_id("a_b", "c");
+        ASSERT_EQ(frame, vicon_receiver::make_segment_frame_id("a", "b_c"));
+
+        EXPECT_TRUE(frames.claim(frame, "a_b/c"));
+        EXPECT_TRUE(frames.claim(frame, "a_b/c")) << "the owner keeps its name on every frame";
+        EXPECT_FALSE(frames.claim(frame, "a/b_c"));
+        EXPECT_EQ(frames.owner_of(frame), "a_b/c");
+    }
+
+    TEST(NameOwnership, UnclaimedNameHasNoOwner)
+    {
+        const vicon_receiver::NameOwnership topics;
+        EXPECT_EQ(topics.owner_of("/vicon/a/b"), "");
+    }
 } // namespace name_conversion_tests
 
 // =================================================================================================
