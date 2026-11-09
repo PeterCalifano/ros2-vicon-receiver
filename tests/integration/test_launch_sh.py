@@ -10,8 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-
-from conftest import SCRIPTS_DIR, ShellRunner, TcpListener, Run_until_output
+from conftest import SCRIPTS_DIR, Run_until_output, ShellRunner, TcpListener
 
 pytestmark = pytest.mark.integration
 

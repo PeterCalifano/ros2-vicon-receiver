@@ -14,8 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-
-from conftest import DEFAULT_TIMEOUT_S, NODE_EXECUTABLE, TcpListener, Run_until_output
+from conftest import DEFAULT_TIMEOUT_S, NODE_EXECUTABLE, Run_until_output, TcpListener
 
 pytestmark = pytest.mark.integration
 

@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from conftest import REPO_ROOT, Load_default_parameters, ShellRunner, TcpListener
 
 # Canned output of "ip -o -4 addr show" for a machine on the Vicon network (eth9) and an

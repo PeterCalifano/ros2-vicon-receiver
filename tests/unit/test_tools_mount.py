@@ -26,9 +26,9 @@ from vicon_receiver_tools.mount_estimate import (  # noqa: E402
 from vicon_receiver_tools.robot_model import (  # noqa: E402
     Link_pose,
     Load_urdf,
-    RobotModelError,
     Resolve_mesh_path,
     Rigid_subtree,
+    RobotModelError,
 )
 
 # Tiny URDF: base -> torso (revolute), torso -> head and torso -> camera (fixed)
@@ -110,7 +110,7 @@ def test_missing_urdf_is_reported(tmp_path: Path) -> None:
 # Marker constellation from a probe recording
 # -------------------------------------------------------------------------------------------------
 def test_marker_constellation_in_body_frame() -> None:
-    """Markers are expressed in the body frame; occluded samples and invalid rotations are skipped."""
+    """Markers are in the body frame; occluded samples and invalid rotations are skipped."""
     rotation_ = Rotation.from_euler("z", 90, degrees=True)
     body_points_ = {
         "m1": np.array([0.1, 0.0, 0.0]),
@@ -200,7 +200,7 @@ HEAD_MARKERS: tuple[int, ...] = (3, 4)
 
 
 def Synthetic_surfaces() -> list[SampledMeshSurface]:
-    """Surface of each synthetic marker: the head for the head markers, the whole robot otherwise."""
+    """Surface of each synthetic marker: the head for the head markers, else the whole robot."""
     mesh_, head_ = Synthetic_robot()
     robot_surface_ = SampledMeshSurface.From_mesh(mesh_)
     head_surface_ = SampledMeshSurface.From_mesh(head_)

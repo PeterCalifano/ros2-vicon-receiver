@@ -417,8 +417,8 @@ def ros_env() -> dict[str, str]:
 
     environment_ = Load_ros_environment()
     # Keep test traffic on this machine, away from other ROS 2 systems on the network. With the
-    # WSL profile (scripts/lib/ros_env.sh) traffic is already local, and LOCALHOST would override the
-    # profile with redirected 127.0.0.1 peers: let the profile decide.
+    # WSL profile (scripts/lib/ros_env.sh) traffic is already local, and LOCALHOST would override
+    # the profile with redirected 127.0.0.1 peers: let the profile decide.
     if environment_.get("FASTRTPS_DEFAULT_PROFILES_FILE"):
         environment_["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "SYSTEM_DEFAULT"
     else:

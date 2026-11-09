@@ -33,12 +33,15 @@ from typing import TypedDict
 
 import numpy as np
 import trimesh
-import yaml
 from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
-from vicon_receiver_tools.viewer import Is_unit_quaternion
+from vicon_receiver_tools.viewer_config import (
+    Is_unit_quaternion,
+    LinkPoseInBodyFrame,
+    Save_mount,
+)
 
 # Spacing of the surface samples used for the distances [m]
 SURFACE_SPACING_M: float = 0.002
@@ -242,7 +245,8 @@ def Lateral_direction_deg(
         span_ = float(np.hypot(difference_[0], difference_[1]))
         if span_ < MIN_PAIR_SPAN_M:
             raise MountEstimateError(
-                f"markers {left_} and {right_} are {span_ * 1000:.0f} mm apart horizontally: no direction"
+                f"markers {left_} and {right_} are {span_ * 1000:.0f} mm apart horizontally: "
+                "no direction"
             )
         directions_deg_.append(float(np.degrees(np.arctan2(difference_[1], difference_[0]))))
 
@@ -256,7 +260,7 @@ def Lateral_direction_deg(
 
 
 def Upright_rotation(heading_deg: float) -> np.ndarray:
-    """Rotation body -> link of an upright link whose x axis points at heading_deg in the body x-y plane."""
+    """Rotation body -> link of an upright link, its x axis at heading_deg in the body x-y plane."""
     return Rotation.from_euler("z", heading_deg, degrees=True).as_matrix().T
 
 
@@ -266,8 +270,9 @@ def Fit_position(
     surfaces: list[SampledMeshSurface],
     surface_offset_m: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Least-squares link position for a fixed rotation: every marker at surface_offset_m from
-    its surface.
+    """Least-squares link position for a fixed rotation.
+
+    Every marker is put at surface_offset_m from its surface.
 
     Args:
         body_points: Marker positions in the body frame (N x 3) [m], N >= 4.
@@ -325,7 +330,7 @@ def Estimate_upright_mount(
     surfaces: list[SampledMeshSurface],
     surface_offset_m: float,
 ) -> MountEstimateResult:
-    """LinkPoseInBodyFrame of an upright link from left/right marker pairs and a position fit (see module doc).
+    """Mount of an upright link from left/right marker pairs and a position fit (see module doc).
 
     Args:
         body_points: Marker positions in the body frame (N x 3) [m], N >= 4.
@@ -364,23 +369,21 @@ def Write_mount_file(
 ) -> None:
     """Write the mount (pose of the link in the body frame) as YAML for the viewer."""
     rotation_, translation_ = estimate.link_in_body()
-    rpy_ = Rotation.from_matrix(rotation_).as_euler("xyz")
-    std_mm_ = ", ".join(f"{value_ * 1000:.0f}" for value_ in estimate.translation_std_m)
-    document_ = {
-        "link": link,
-        "subject": subject,
-        "xyz_m": [round(float(value_), 5) for value_ in translation_],
-        "rpy_rad": [round(float(value_), 5) for value_ in rpy_],
-    }
-    header_ = (
-        f"# Pose of the robot link '{link}' in the Vicon body frame of subject '{subject}'.\n"
-        "# ESTIMATED by scripts/estimate_mount.py, not measured: link upright (robot standing when\n"
-        "# the Vicon object was created), heading from the left/right marker pairs of the viewer\n"
-        f"# config (they agree within {estimate.pair_disagreement_deg:.1f} deg), position fitted to the meshes\n"
-        f"# (RMS {estimate.rms_m * 1000:.1f} mm, std x/y/z {std_mm_} mm). Recording: {recording}.\n"
-        "# Adjust it in the viewer (scripts/start_visualizer.sh) and save from there if needed.\n"
+    roll_, pitch_, yaw_ = Rotation.from_matrix(rotation_).as_euler("xyz")
+    x_, y_, z_ = translation_
+    mount_ = LinkPoseInBodyFrame(
+        xyz_m=(float(x_), float(y_), float(z_)), rpy_rad=(float(roll_), float(pitch_), float(yaw_))
     )
-    path.write_text(header_ + yaml.safe_dump(document_, sort_keys=False), encoding="utf-8")
+    std_mm_ = ", ".join(f"{value_ * 1000:.0f}" for value_ in estimate.translation_std_m)
+    note_ = (
+        "ESTIMATED by scripts/estimate_mount.py, not measured: link upright (robot standing when\n"
+        "the Vicon object was created), heading from the left/right marker pairs of the viewer\n"
+        f"config (they agree within {estimate.pair_disagreement_deg:.1f} deg), "
+        "position fitted to the meshes\n"
+        f"(RMS {estimate.rms_m * 1000:.1f} mm, std x/y/z {std_mm_} mm). Recording: {recording}.\n"
+        "Adjust it in the viewer (scripts/start_visualizer.sh) and save from there if needed."
+    )
+    Save_mount(path, mount_, link, subject, note_)
 
 
 def Report(
@@ -396,16 +399,20 @@ def Report(
     std_ = estimate.translation_std_m * 1000.0
     lines_ = [
         f"{link} in the body frame of {subject} (upright: roll = pitch = 0):",
-        f"  xyz [m]   {np.round(translation_, 4)}  (std {std_[0]:.0f} / {std_[1]:.0f} / {std_[2]:.0f} mm, link axes)",
+        f"  xyz [m]   {np.round(translation_, 4)}  "
+        f"(std {std_[0]:.0f} / {std_[1]:.0f} / {std_[2]:.0f} mm, link axes)",
         f"  rpy [deg] {np.round(rpy_deg_, 1)}",
         f"  heading   link x axis at {estimate.heading_deg:.1f} deg in the body x-y plane",
     ]
-    for (left_, right_), direction_deg_ in zip(lateral_pairs, estimate.pair_directions_deg):
+    for (left_, right_), direction_deg_ in zip(
+        lateral_pairs, estimate.pair_directions_deg, strict=True
+    ):
         lines_.append(
             f"  pair      right {names[right_]} -> left {names[left_]}: {direction_deg_:.1f} deg"
         )
     lines_.append(
-        f"  pairs agree within {estimate.pair_disagreement_deg:.1f} deg; RMS {estimate.rms_m * 1000:.1f} mm"
+        f"  pairs agree within {estimate.pair_disagreement_deg:.1f} deg; "
+        f"RMS {estimate.rms_m * 1000:.1f} mm"
     )
     for index_, name_ in enumerate(names):
         lines_.append(f"  {name_:28s} error {estimate.marker_errors_m[index_] * 1000:6.1f} mm")

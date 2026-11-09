@@ -25,7 +25,7 @@ import argparse
 import csv
 import math
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TextIO
@@ -36,11 +36,27 @@ from vicon_receiver_tools.config import ConfigError, Read_parameter
 
 if TYPE_CHECKING:
     from builtin_interfaces.msg import Time
+
     from vicon_receiver_msgs.msg import ViconFrame
 
 # Values kept per frame until the HDF5 file is written
 type SegmentRow = tuple[tuple[float, float, float], tuple[float, float, float, float], bool, bool]
 type MarkerRow = tuple[tuple[float, float, float], bool, int]
+
+
+class FrameExporter(Protocol):
+    """One output format: add a class with these members to EXPORTERS."""
+
+    name: str
+
+    def add(self, frame: ViconFrame) -> None:
+        """Take one frame."""
+
+    def finish(self, metadata: dict[str, str]) -> list[Path]:
+        """Write what is left and return the files created."""
+
+    def abort(self) -> None:
+        """Reading failed half-way: leave no output that looks like a full export."""
 
 
 class CsvRowWriter(Protocol):
@@ -75,6 +91,7 @@ def Read_vicon_frames(bag_dir: Path, topic: str) -> Iterator[ViconFrame]:
     """
     import rosbag2_py
     from rclpy.serialization import deserialize_message
+
     from vicon_receiver_msgs.msg import ViconFrame
 
     reader_ = rosbag2_py.SequentialReader()
@@ -365,8 +382,8 @@ class Hdf5Exporter:
         return [path_]
 
 
-# Registered formats: name -> exporter class
-EXPORTERS: dict[str, type] = {"csv": CsvExporter, "hdf5": Hdf5Exporter}
+# Registered formats: name -> exporter, created with the output directory
+EXPORTERS: dict[str, Callable[[Path], FrameExporter]] = {"csv": CsvExporter, "hdf5": Hdf5Exporter}
 
 
 def Session_metadata(session_dir: Path) -> dict[str, str]:
@@ -409,7 +426,8 @@ def Export(
 
     output_dir_ = session_dir / "exports"
     output_dir_.mkdir(exist_ok=True)
-    exporters_ = [EXPORTERS[format_](output_dir=output_dir_) for format_ in formats]
+    # A format given twice counts once: two CSV exporters would write the same files
+    exporters_ = [EXPORTERS[format_](output_dir_) for format_ in dict.fromkeys(formats)]
 
     count_ = 0
     try:
@@ -436,7 +454,7 @@ def Main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
     parser_ = argparse.ArgumentParser(
         prog="python3 -m vicon_receiver_tools.export",
-        description="Export the ViconFrame messages of a recorded session (MCAP) to CSV and/or HDF5.",
+        description="Export the ViconFrame messages of a recorded session to CSV and/or HDF5.",
     )
     parser_.add_argument("session_dir", type=Path, help="session directory (scripts/record.sh)")
     parser_.add_argument(

@@ -159,7 +159,8 @@ def Main(argv: list[str]) -> int:
         prefix_ = Tools_env_prefix(env_name_)
         if prefix_ is None or not (prefix_ / "bin" / "python").exists():
             return Fail(
-                f"Conda environment '{env_name_}' not found. Create it with: conda env create -f {ENVIRONMENT_FILE}"
+                f"Conda environment '{env_name_}' not found. "
+                f"Create it with: conda env create -f {ENVIRONMENT_FILE}"
             )
         env_python_ = str(prefix_ / "bin" / "python")
         os.environ[RESTART_GUARD] = "1"
@@ -174,10 +175,11 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
     """Map the set-up facts of the viewer config onto the generic mount estimate and run it."""
     import json
 
-    from vicon_receiver_tools import mount_estimate
     from vicon_receiver_tools.config import ConfigError
-    from vicon_receiver_tools.robot_model import Link_mesh, Load_urdf, RobotModelError, Rigid_mesh
+    from vicon_receiver_tools.robot_model import Link_mesh, Load_urdf, Rigid_mesh, RobotModelError
     from vicon_receiver_tools.viewer_config import Load_viewer_config
+
+    from vicon_receiver_tools import mount_estimate
 
     try:
         config_ = Load_viewer_config(viewer_config)

@@ -10,7 +10,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from conftest import ShellRunner
 
 # Scripts with a command-line interface, relative to scripts/ (lib/*.sh are sourced, not executed;

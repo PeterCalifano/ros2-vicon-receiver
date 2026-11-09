@@ -13,7 +13,6 @@ import sys
 import textwrap
 
 import pytest
-
 from conftest import Wait_or_kill
 
 pytestmark = pytest.mark.integration
@@ -47,7 +46,9 @@ LISTENER_SOURCE: str = textwrap.dedent(
     rclpy.init()
     node = rclpy.create_node("dds_test_listener")
     received = [0]
-    node.create_subscription(String, "/dds_test_topic", lambda _m: received.__setitem__(0, received[0] + 1), 10)
+    node.create_subscription(
+        String, "/dds_test_topic", lambda _m: received.__setitem__(0, received[0] + 1), 10
+    )
     deadline = time.monotonic() + 6.0
     while time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.05)

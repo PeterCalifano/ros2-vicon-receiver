@@ -20,6 +20,8 @@ ROS 2 environment of the workspace (vicon_receiver_msgs, rclpy).
 from __future__ import annotations
 
 import argparse
+import contextlib
+import logging
 import sys
 import threading
 import time
@@ -34,9 +36,10 @@ from scipy.spatial.transform import Rotation
 
 from vicon_receiver_tools.viewer_config import (
     IDENTITY_MOUNT,
+    Is_unit_quaternion,
+    LinkPoseInBodyFrame,
     Load_mount,
     Load_viewer_config,
-    LinkPoseInBodyFrame,
     Save_mount,
     ViewerConfig,
 )
@@ -45,8 +48,9 @@ if TYPE_CHECKING:
     import viser
     import yourdfpy
     from sensor_msgs.msg import JointState
-    from vicon_receiver_msgs.msg import SegmentState, ViconFrame
     from viser.extras import ViserUrdf
+
+    from vicon_receiver_msgs.msg import SegmentState, ViconFrame
 
 # Marker colours (RGB): enough cameras, few cameras
 COLOR_GOOD: tuple[int, int, int] = (40, 180, 60)
@@ -71,9 +75,7 @@ TELEMETRY_PERIOD_S: float = 0.5
 # Receive times used for the displayed rate [s]: the rate falls to 0 this long after the last frame
 RATE_WINDOW_S: float = 1.0
 
-# Accepted deviation of a quaternion norm from 1 (same as the node: Vicon sends [0, 0, 0, 0] for an
-# occluded segment)
-QUATERNION_NORM_TOLERANCE: float = 1e-3
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------------------------------------
@@ -119,11 +121,6 @@ class ViewerFrame:
     latency_s: float
     any_occluded: bool
     subjects: list[ViewerSubject]
-
-
-def Is_unit_quaternion(quaternion: np.ndarray) -> bool:
-    """Whether a quaternion (any component order) has unit norm, i.e. is a valid rotation."""
-    return bool(abs(np.linalg.norm(quaternion) - 1.0) <= QUATERNION_NORM_TOLERANCE)
 
 
 def Segment_key(subject_ros_name: str, segment_name: str) -> str:
@@ -208,7 +205,7 @@ def Matrix_to_wxyz_position(transform: np.ndarray) -> tuple[np.ndarray, np.ndarr
 
 
 def Camera_position(robot_position: np.ndarray, heading_rad: float) -> np.ndarray:
-    """Where a browser camera looks at the robot from: CAMERA_OFFSET_M turned by the robot heading."""
+    """Where a browser camera looks from: CAMERA_OFFSET_M turned by the robot heading."""
     cos_, sin_ = np.cos(heading_rad), np.sin(heading_rad)
     offset_x_, offset_y_, offset_z_ = CAMERA_OFFSET_M
     offset_ = np.array(
@@ -390,8 +387,8 @@ class LatestJointStates:
                         )
                     message_ = self.deserialize(message_)
                 self._pending = None
-                # JointState allows an empty position array (velocities or efforts only)
-                for name_, position_ in zip(message_.name, message_.position):
+                # strict=False: JointState allows an empty position array
+                for name_, position_ in zip(message_.name, message_.position, strict=False):
                     if np.isfinite(position_):
                         self._positions[name_] = float(position_)
             return dict(self._positions)
@@ -552,7 +549,7 @@ class ViserLiveViewer:
             self._config.robot.subject,
             "Adjusted in the live viewer (scripts/start_visualizer.sh).",
         )
-        print(f"[viewer] mount saved to {path_}")
+        _LOGGER.info("mount saved to %s", path_)
 
     # --- updates -----------------------------------------------------------------------------
     def update(self, frame: ViewerFrame, buffer: LatestFrameBuffer) -> None:
@@ -593,8 +590,10 @@ class ViserLiveViewer:
         self.update_telemetry(frame, buffer)
 
     def _hide_absent(self, frame: ViewerFrame) -> None:
-        """Hide what belongs to subjects or segments missing from the frame (removed from the
-        Tracker), instead of leaving it frozen at its last pose."""
+        """Hide what belongs to subjects or segments missing from the frame.
+
+        They were removed from the Tracker: nothing stays frozen at its last pose.
+        """
         subjects_ = {subject_.ros_name for subject_ in frame.subjects}
         segments_ = {
             Segment_key(subject_.ros_name, segment_.name)
@@ -624,7 +623,7 @@ class ViserLiveViewer:
             handle_.visible = visible
 
     def update_telemetry(self, frame: ViewerFrame, buffer: LatestFrameBuffer) -> None:
-        """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), also without new frames."""
+        """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), new frames or not."""
         now_ = time.monotonic()
         if now_ - self._last_telemetry_s >= TELEMETRY_PERIOD_S:
             self._telemetry.content = (
@@ -667,7 +666,7 @@ class ViserLiveViewer:
             )
 
     def _update_markers(self, subject: ViewerSubject) -> None:
-        """Markers of one subject as a point cloud; occluded ones have no position and are left out."""
+        """Markers of one subject as a point cloud, without the occluded ones (no position)."""
         visible_ = [marker_ for marker_ in subject.markers if not marker_.occluded]
         handle_ = self._marker_handles.get(subject.ros_name)
         if not visible_:
@@ -710,7 +709,7 @@ class ViserLiveViewer:
                 self._point_camera_at_robot(client_)
 
     def _place_robot(self) -> None:
-        """Pose of the robot root and of the frustums from the mount link pose and the joint angles."""
+        """Pose of the robot root and frustums from the mount link pose and the joint angles."""
         if self._mount_in_world is None or self._robot_frame is None:
             return
         mount_in_world_ = self._mount_in_world
@@ -742,6 +741,10 @@ def Main(argv: list[str] | None = None) -> int:
     )
     arguments_ = parser_.parse_args(argv)
 
+    # Only this module reports at INFO; the libraries it uses stay at WARNING
+    logging.basicConfig(level=logging.WARNING, format="[viewer] %(message)s", stream=sys.stdout)
+    _LOGGER.setLevel(logging.INFO)
+
     from vicon_receiver_tools.config import ConfigError
 
     try:
@@ -754,6 +757,7 @@ def Main(argv: list[str] | None = None) -> int:
     import viser
     from rclpy.executors import ExternalShutdownException
     from rclpy.serialization import deserialize_message
+
     from vicon_receiver_msgs.msg import ViconFrame
 
     server_ = viser.ViserServer(host=config_.viewer.host, port=config_.viewer.port, verbose=False)
@@ -779,17 +783,18 @@ def Main(argv: list[str] | None = None) -> int:
 
     def _Spin() -> None:
         # Ctrl+C shuts rclpy down from the main thread: end the spin quietly
-        try:
+        with contextlib.suppress(ExternalShutdownException):
             rclpy.spin(node_)
-        except ExternalShutdownException:
-            pass
 
     spinner_ = threading.Thread(target=_Spin, daemon=True)
     spinner_.start()
     joints_note_ = config_.robot.joint_states_topic or "none: zero angles"
-    print(
-        f"[viewer] open http://{config_.viewer.host}:{config_.viewer.port} "
-        f"(topic {config_.viewer.topic}, joint states {joints_note_})"
+    _LOGGER.info(
+        "open http://%s:%s (topic %s, joint states %s)",
+        config_.viewer.host,
+        config_.viewer.port,
+        config_.viewer.topic,
+        joints_note_,
     )
 
     period_s_ = 1.0 / config_.viewer.update_rate_hz
@@ -801,8 +806,8 @@ def Main(argv: list[str] | None = None) -> int:
             if frame_ is not None and frame_ is not last_frame_:
                 if last_frame_ is None:
                     subjects_ = ", ".join(subject_.name for subject_ in frame_.subjects) or "none"
-                    print(
-                        f"[viewer] receiving frames (frame {frame_.frame_number}, subjects: {subjects_})"
+                    _LOGGER.info(
+                        "receiving frames (frame %d, subjects: %s)", frame_.frame_number, subjects_
                     )
                 viewer_.update(frame_, buffer_)
                 last_frame_ = frame_

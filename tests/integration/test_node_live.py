@@ -19,7 +19,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-
 from conftest import SCRIPTS_DIR, Stop_process_group
 
 pytestmark = [pytest.mark.integration, pytest.mark.vicon_live]
@@ -45,11 +44,17 @@ SUBSCRIBER_SOURCE: str = textwrap.dedent(
     last = frames[-1] if frames else None
     print(json.dumps({
         "count": len(frames),
-        "numbers_increasing": all(b.frame_number > a.frame_number for a, b in zip(frames, frames[1:])),
-        "stamps_before_receive": all(seconds(f.header.stamp) < seconds(f.receive_stamp) for f in frames),
+        "numbers_increasing": all(
+            b.frame_number > a.frame_number for a, b in zip(frames, frames[1:])
+        ),
+        "stamps_before_receive": all(
+            seconds(f.header.stamp) < seconds(f.receive_stamp) for f in frames
+        ),
         "frame_id": last.header.frame_id if last else None,
         "subjects": [s.name for s in last.subjects] if last else [],
-        "segment_frame_ids": [g.frame_id for s in last.subjects for g in s.segments] if last else [],
+        "segment_frame_ids": (
+            [g.frame_id for s in last.subjects for g in s.segments] if last else []
+        ),
         "markers": sum(len(s.markers) for s in last.subjects) if last else 0,
         "rate_hz": last.frame_rate_hz if last else 0.0,
     }))

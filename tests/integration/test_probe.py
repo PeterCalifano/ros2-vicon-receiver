@@ -5,7 +5,8 @@ listener stands in for a server that accepts connections but does not speak the 
 protocol, and 192.0.2.1 (RFC 5737) for an unreachable one.
 
 The test marked ``vicon_live`` records a few frames from a real server; it runs only when
-VICON_LIVE_HOST is set, e.g. ``VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live``.
+VICON_LIVE_HOST is set, e.g.
+``VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live``.
 """
 
 from __future__ import annotations
@@ -16,11 +17,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from conftest import (
-    ConfigFactory,
     DEFAULT_TIMEOUT_S,
     PROBE_EXECUTABLE,
+    ConfigFactory,
     Load_default_parameters,
     ShellRunner,
     TcpListener,

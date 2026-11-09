@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from conftest import DEFAULT_TIMEOUT_S, REPO_ROOT, SCRIPTS_DIR
 
 pytestmark = pytest.mark.integration

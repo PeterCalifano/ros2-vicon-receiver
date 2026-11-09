@@ -15,9 +15,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import yaml
-from scipy.spatial.transform import Rotation
-
 from conftest import REPO_ROOT, VIEWER_CONFIG, Subject_at_origin, ViewerScene, Write_viewer_config
+from scipy.spatial.transform import Rotation
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
     Joint_configuration,

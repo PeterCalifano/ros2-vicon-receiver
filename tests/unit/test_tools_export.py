@@ -13,9 +13,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from vicon_receiver_tools.export import Export, ExportError
 
 from vicon_receiver_tools import export
-from vicon_receiver_tools.export import Export, ExportError
 
 TOPIC: str = "/vicon/frame"
 
@@ -113,3 +113,15 @@ def test_unknown_format_is_rejected(session_dir: Path) -> None:
     """Only registered formats; nothing implicit."""
     with pytest.raises(ExportError, match="unknown or missing format"):
         Export(session_dir, ["parquet"], topic=TOPIC)
+
+
+def test_a_format_given_twice_is_exported_once(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two CSV exporters would write the same files: a repeated format counts once."""
+    Use_frames(monkeypatch, iter([Make_frame(1), Make_frame(2)]))
+    count_, paths_ = Export(session_dir, ["csv", "csv"], topic=TOPIC)
+    assert count_ == 2
+    assert len(paths_) == len(set(paths_))
+    with (session_dir / "exports" / "frames.csv").open(encoding="utf-8") as stream_:
+        assert len(list(csv.DictReader(stream_))) == 2

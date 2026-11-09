@@ -7,12 +7,10 @@ and of WSL with mirrored networking, so the detection runs the same on every mac
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
-
 from conftest import REPO_ROOT, ROS_ENV_SH, ShellRunner
 
 # "ip -4 route get 127.0.0.1" on a normal Linux machine
@@ -33,7 +31,7 @@ LO_WITHOUT_WSL_ADDRESS: str = (
     "    inet 127.0.0.1/8 scope host lo"
 )
 
-PROFILE_FILE: str = str(REPO_ROOT / "config" / "fastdds_wsl.xml")
+PROFILE_FILE: Path = REPO_ROOT / "config" / "fastdds_wsl.xml"
 
 
 def Run_dds(
@@ -85,8 +83,8 @@ def test_unknown_route_is_not_redirected(shell: ShellRunner) -> None:
 def test_profile_file_points_to_repository_config(shell: ShellRunner) -> None:
     """The profile is the one in config/, whatever the current directory."""
     result_ = Run_dds(shell, "cd /; vicon_dds_profile_file", ROUTE_LOCAL)
-    assert result_.stdout.strip() == PROFILE_FILE
-    assert os.path.isfile(PROFILE_FILE)
+    assert result_.stdout.strip() == str(PROFILE_FILE)
+    assert PROFILE_FILE.is_file()
 
 
 # -------------------------------------------------------------------------------------------------
@@ -174,7 +172,7 @@ def test_configure_warns_without_wsl_loopback_address(shell: ShellRunner) -> Non
 @pytest.mark.parametrize("address", ["10.255.255.254"])
 def test_profile_uses_the_wsl_loopback_address(address: str) -> None:
     """config/fastdds_wsl.xml and ros_env.sh agree on the loopback address."""
-    profile_text_ = open(PROFILE_FILE, encoding="utf-8").read()
+    profile_text_ = PROFILE_FILE.read_text(encoding="utf-8")
     ros_env_text_ = ROS_ENV_SH.read_text(encoding="utf-8")
     assert profile_text_.count(f"<address>{address}</address>") == 2  # whitelist + initial peer
     assert f'VICON_WSL_LOOPBACK_ADDRESS="{address}"' in ros_env_text_

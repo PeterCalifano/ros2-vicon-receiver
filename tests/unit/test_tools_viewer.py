@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from conftest import REPO_ROOT, Subject_at_origin, ViewerScene
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
@@ -22,20 +21,20 @@ from vicon_receiver_tools.viewer import (
     COLOR_GOOD,
     Camera_position,
     LatestFrameBuffer,
-    ViewerFrame,
-    ViewerMarker,
-    Viewer_frame_from_message,
     Marker_colors,
     Matrix_to_wxyz_position,
     Pose_matrix,
     Telemetry_markdown,
     Trail_segments,
+    Viewer_frame_from_message,
+    ViewerFrame,
+    ViewerMarker,
 )
 from vicon_receiver_tools.viewer_config import (
     IDENTITY_MOUNT,
+    LinkPoseInBodyFrame,
     Load_mount,
     Load_viewer_config,
-    LinkPoseInBodyFrame,
     Save_mount,
 )
 
@@ -174,7 +173,8 @@ def test_frame_buffer_keeps_latest_frame_and_bounded_trail() -> None:
         buffer_.latest()  # one scene update per frame: every frame reaches the trail
 
     latest_ = buffer_.latest()
-    assert isinstance(latest_, ViewerFrame) and latest_.frame_number == 4
+    assert isinstance(latest_, ViewerFrame)
+    assert latest_.frame_number == 4
     trail_ = buffer_.trail("g1_unitree_torso_cam/seg")
     np.testing.assert_allclose(trail_[:, 0], [1.0, 3.0, 4.0])
     assert buffer_.rate_hz(now_s=0.045) == pytest.approx(100.0)
@@ -275,7 +275,8 @@ def test_frame_buffer_decodes_only_the_latest_serialized_message() -> None:
         buffer_.put_serialized(str(frame_number_).encode())
 
     latest_ = buffer_.latest()
-    assert latest_ is not None and latest_.frame_number == 3
+    assert latest_ is not None
+    assert latest_.frame_number == 3
     assert decoded_ == [b"3"]
     # No new message: nothing decoded again
     buffer_.latest()
@@ -295,7 +296,9 @@ def test_viewer_config_has_the_set_up_marker_pairs() -> None:
     settings_ = Load_viewer_config(VIEWER_CONFIG).mount_estimate
     assert len(settings_.lateral_marker_pairs) >= 1
     for pair_ in settings_.lateral_marker_pairs:
-        assert pair_.left and pair_.right and pair_.left != pair_.right
+        assert pair_.left
+        assert pair_.right
+        assert pair_.left != pair_.right
     assert all(isinstance(link_, str) for link_ in settings_.marker_links.values())
 
 

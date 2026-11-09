@@ -25,6 +25,15 @@ from scipy.spatial.transform import Rotation
 
 from vicon_receiver_tools.config import ConfigError, Load_yaml, YamlValue
 
+# Accepted deviation of a quaternion norm from 1 (same as the node: Vicon sends [0, 0, 0, 0] for an
+# occluded segment)
+QUATERNION_NORM_TOLERANCE: float = 1e-3
+
+
+def Is_unit_quaternion(quaternion: np.ndarray) -> bool:
+    """Whether a quaternion (any component order) has unit norm, i.e. is a valid rotation."""
+    return bool(abs(np.linalg.norm(quaternion) - 1.0) <= QUATERNION_NORM_TOLERANCE)
+
 
 @dataclass(frozen=True)
 class ViewerSettings:
@@ -47,10 +56,10 @@ class RobotSettings:
 
     subject: str
     source: str
-    directory: str
+    directory: Path
     urdf: str
     mount_link: str
-    mount_file: str
+    mount_file: Path
     # sensor_msgs/JointState topic giving the joint angles of the model; None: zero angles
     joint_states_topic: str | None = None
 
@@ -79,7 +88,7 @@ class PinholeCameraSettings:
 
 @dataclass(frozen=True)
 class LeftRightMarkerPairSettings:
-    """Two markers of the subject placed on the left and on the right of the robot (set-up specific)."""
+    """Two markers of the subject placed on the left and on the right of the robot."""
 
     left: str
     right: str
@@ -207,10 +216,10 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
     robot_ = RobotSettings(
         subject=_Require(robot_section_, "subject", str, "robot"),
         source=_Require(robot_section_, "source", str, "robot"),
-        directory=_Require(robot_section_, "directory", str, "robot"),
+        directory=Path(_Require(robot_section_, "directory", str, "robot")),
         urdf=_Require(robot_section_, "urdf", str, "robot"),
         mount_link=_Require(robot_section_, "mount_link", str, "robot"),
-        mount_file=_Require(robot_section_, "mount_file", str, "robot"),
+        mount_file=Path(_Require(robot_section_, "mount_file", str, "robot")),
         joint_states_topic=_Optional_text(robot_section_, "joint_states_topic", "robot"),
     )
 
@@ -264,7 +273,8 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
     for marker_, link_ in marker_links_.items():
         if not isinstance(marker_, str) or not isinstance(link_, str):
             raise ConfigError(
-                f"mount_estimate.marker_links: '{marker_}: {link_}' must map a marker name to a link name"
+                f"mount_estimate.marker_links: '{marker_}: {link_}' "
+                "must map a marker name to a link name"
             )
     mount_estimate_ = MountEstimateSettings(
         surface_offset_m=surface_offset_m_,
@@ -303,15 +313,21 @@ def Load_mount(path: Path) -> LinkPoseInBodyFrame | None:
 
 
 def Save_mount(path: Path, mount: LinkPoseInBodyFrame, link: str, subject: str, note: str) -> None:
-    """Write the mount file, with a comment saying where the values come from."""
+    """Write the mount file, with comments saying where the values come from.
+
+    Args:
+        path: File to write.
+        mount: Pose of the link in the body frame.
+        link: Name of the link.
+        subject: Vicon subject.
+        note: Where the values come from; each of its lines becomes a comment.
+    """
     document_ = {
         "link": link,
         "subject": subject,
         "xyz_m": [round(value_, 5) for value_ in mount.xyz_m],
         "rpy_rad": [round(value_, 5) for value_ in mount.rpy_rad],
     }
-    header_ = (
-        f"# Pose of the G1 link '{link}' in the Vicon body frame of subject '{subject}'.\n"
-        f"# {note}\n"
-    )
+    header_ = f"# Pose of the robot link '{link}' in the Vicon body frame of subject '{subject}'.\n"
+    header_ += "".join(f"# {line_}\n" for line_ in note.splitlines())
     path.write_text(header_ + yaml.safe_dump(document_, sort_keys=False), encoding="utf-8")

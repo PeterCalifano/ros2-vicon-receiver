@@ -45,6 +45,7 @@ class InterfaceAddress:
         return self.device == LOOPBACK_DEVICE or self.interface.ip.is_loopback
 
     def __str__(self) -> str:
+        """Device and address, as in the local-subnet report."""
         return f"{self.device} {self.interface.with_prefixlen}"
 
 

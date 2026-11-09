@@ -51,7 +51,7 @@ tests/
     test_common_sh.py                  scripts/lib/common.sh functions
     test_ros_env_sh.py                 scripts/lib/ros_env.sh (setup files, WSL mirrored networking detection/profile), source_ros_env.sh
     test_scripts_cli.py                command line and usage layout of scripts/* and tests/run_tests.sh
-    test_static_checks.py              shellcheck and clang-format (skipped if not installed)
+    test_static_checks.py              shellcheck, clang-format and ruff (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
     test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs, hiding of removed subjects (viser)

@@ -36,7 +36,7 @@ PARAMETERS_KEY: str = "ros__parameters"
 
 
 # A value of a YAML document, as yaml.safe_load() returns it for our files
-type YamlValue = str | int | float | bool | None | list[YamlValue] | dict[str, YamlValue]
+type YamlValue = str | int | float | bool | list[YamlValue] | dict[str, YamlValue] | None
 
 
 class ConfigError(Exception):
@@ -58,13 +58,7 @@ def Load_node_parameters(
     Raises:
         ConfigError: If the file cannot be read or parsed, or has no parameters for the node.
     """
-    try:
-        with config_file.open("r", encoding="utf-8") as stream_:
-            document_ = yaml.safe_load(stream_)
-    except OSError as error_:
-        raise ConfigError(f"cannot read {config_file}: {error_.strerror}") from error_
-    except yaml.YAMLError as error_:
-        raise ConfigError(f"cannot parse {config_file}: {error_}") from error_
+    document_ = Load_yaml(config_file)
 
     # Each level must be a mapping; anything else means the layout is wrong
     node_section_ = document_.get(node_name) if isinstance(document_, dict) else None

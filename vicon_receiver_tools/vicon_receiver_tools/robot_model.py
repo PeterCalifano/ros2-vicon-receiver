@@ -79,10 +79,10 @@ def Load_urdf(model_dir: Path, urdf_name: str, load_meshes: bool) -> yourdfpy.UR
 
 
 def Link_pose(urdf: yourdfpy.URDF, link: str, reference: str) -> np.ndarray:
-    """Pose (4x4) of a link in the frame of another link, at the current joint configuration of
-    the URDF (zero after loading; update_cfg() changes it).
+    """Pose (4x4) of a link in the frame of another link, at the current joint configuration.
 
-    Works in both directions of the kinematic tree (the scene graph is directed).
+    The configuration of the URDF is zero after loading; update_cfg() changes it. Works in both
+    directions of the kinematic tree (the scene graph is directed).
 
     Raises:
         RobotModelError: If a link does not exist or the two are not connected.
@@ -122,6 +122,22 @@ def Rigid_subtree(urdf: yourdfpy.URDF, link: str) -> list[str]:
     return subtree_
 
 
+def _Visual_meshes(
+    link: yourdfpy.Link, link_pose: np.ndarray, model_dir: Path
+) -> list[trimesh.Trimesh]:
+    """Visual meshes of a URDF link, moved by the pose of the link."""
+    meshes_: list[trimesh.Trimesh] = []
+    for visual_ in link.visuals:
+        if visual_.geometry.mesh is None:
+            continue
+        mesh_path_ = Resolve_mesh_path(visual_.geometry.mesh.filename, model_dir)
+        mesh_ = trimesh.load(mesh_path_, force="mesh")
+        visual_origin_ = np.eye(4) if visual_.origin is None else visual_.origin
+        mesh_.apply_transform(link_pose @ visual_origin_)
+        meshes_.append(mesh_)
+    return meshes_
+
+
 def Rigid_mesh(urdf: yourdfpy.URDF, link: str, model_dir: Path) -> trimesh.Trimesh:
     """Visual meshes of a link and of the links rigidly attached to it, in the link frame.
 
@@ -132,15 +148,7 @@ def Rigid_mesh(urdf: yourdfpy.URDF, link: str, model_dir: Path) -> trimesh.Trime
     meshes_: list[trimesh.Trimesh] = []
 
     for name_ in Rigid_subtree(urdf, link):
-        link_pose_ = Link_pose(urdf, name_, link)
-        for visual_ in links_by_name_[name_].visuals:
-            if visual_.geometry.mesh is None:
-                continue
-            mesh_path_ = Resolve_mesh_path(visual_.geometry.mesh.filename, model_dir)
-            mesh_ = trimesh.load(mesh_path_, force="mesh")
-            visual_origin_ = np.eye(4) if visual_.origin is None else visual_.origin
-            mesh_.apply_transform(link_pose_ @ visual_origin_)
-            meshes_.append(mesh_)
+        meshes_ += _Visual_meshes(links_by_name_[name_], Link_pose(urdf, name_, link), model_dir)
 
     if not meshes_:
         raise RobotModelError(f"no visual mesh on '{link}' or the links fixed to it")
@@ -160,16 +168,7 @@ def Link_mesh(
         raise RobotModelError(f"link '{mesh_link}' not in the URDF")
 
     link_pose_ = Link_pose(urdf, mesh_link, frame_link)
-    meshes_: list[trimesh.Trimesh] = []
-    for visual_ in links_by_name_[mesh_link].visuals:
-        if visual_.geometry.mesh is None:
-            continue
-        mesh_ = trimesh.load(
-            Resolve_mesh_path(visual_.geometry.mesh.filename, model_dir), force="mesh"
-        )
-        visual_origin_ = np.eye(4) if visual_.origin is None else visual_.origin
-        mesh_.apply_transform(link_pose_ @ visual_origin_)
-        meshes_.append(mesh_)
+    meshes_ = _Visual_meshes(links_by_name_[mesh_link], link_pose_, model_dir)
 
     if not meshes_:
         raise RobotModelError(f"link '{mesh_link}' has no visual mesh")

@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from conftest import (
     CONFIG_FILE,
     REPO_ROOT,
@@ -132,7 +131,8 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
     metadata_ = yaml.safe_load((session_ / "meta.yaml").read_text(encoding="utf-8"))
     assert metadata_["storage"] == "mcap"
     assert metadata_["tag"] == "test"
-    assert "stop_utc" in metadata_ and "clock_source" in metadata_
+    assert "stop_utc" in metadata_
+    assert "clock_source" in metadata_
 
     # Nothing is exported unless asked: no exports/ yet
     assert not (session_ / "exports").exists()
@@ -160,7 +160,8 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
     numbers_ = [int(row_["frame_number"]) for row_ in frames_]
     assert numbers_ == sorted(numbers_)
     drops_ = [int(row_["frames_dropped"]) for row_ in frames_ if row_["frames_dropped"] != "0"]
-    assert drops_ and set(drops_) == {DROPPED_FRAMES}
+    assert drops_
+    assert set(drops_) == {DROPPED_FRAMES}
 
     # Poses: occlusion mask exactly on the multiples of the occlusion period, pose kept as sent
     poses_ = Read_csv(exports_ / "poses_test_body_test_body.csv")

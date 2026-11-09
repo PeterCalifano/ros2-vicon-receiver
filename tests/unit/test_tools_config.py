@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-
 from conftest import CONFIG_FILE, Load_default_parameters
 from vicon_receiver_tools.config import (
     ConfigError,
@@ -68,7 +67,7 @@ def test_read_parameter_missing_key(make_config: Callable[..., Path]) -> None:
 
 def test_missing_file_cannot_be_read(tmp_path: Path) -> None:
     """A non-existent file is reported as unreadable, with the reason."""
-    with pytest.raises(ConfigError, match="cannot read .*No such file or directory"):
+    with pytest.raises(ConfigError, match=r"cannot read .*No such file or directory"):
         Load_node_parameters(tmp_path / "missing.yaml")
 
 

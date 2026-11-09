@@ -12,7 +12,6 @@ import sys
 import textwrap
 
 import pytest
-
 from conftest import DEFAULT_TIMEOUT_S
 
 pytestmark = pytest.mark.integration
@@ -63,7 +62,8 @@ INTROSPECTION_SOURCE: str = textwrap.dedent(
     import vicon_receiver_msgs.msg as messages
 
     names = ["ViconFrame", "SubjectState", "SegmentState", "MarkerState"]
-    print(json.dumps({name: getattr(messages, name).get_fields_and_field_types() for name in names}))
+    fields = {name: getattr(messages, name).get_fields_and_field_types() for name in names}
+    print(json.dumps(fields))
     """
 )
 

@@ -6,10 +6,9 @@ import io
 import ipaddress
 
 import pytest
-
 from vicon_receiver_tools.network import (
-    InterfaceAddress,
     Describe_local_subnet,
+    InterfaceAddress,
     Main,
     Parse_ip_addr_output,
 )

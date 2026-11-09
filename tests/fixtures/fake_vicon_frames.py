@@ -23,6 +23,7 @@ import time
 
 import rclpy
 from builtin_interfaces.msg import Time
+
 from vicon_receiver_msgs.msg import MarkerState, SegmentState, SubjectState, ViconFrame
 
 FIRST_FRAME_NUMBER: int = 1000
@@ -35,7 +36,7 @@ LATENCY_S: float = 0.030
 def To_time(seconds: float) -> Time:
     """builtin_interfaces/Time from seconds."""
     whole_ = int(seconds)
-    nanosec_ = int(round((seconds - whole_) * 1e9))
+    nanosec_ = round((seconds - whole_) * 1e9)
     # A fraction rounded up to a full second carries into the seconds
     if nanosec_ >= 1_000_000_000:
         whole_ += 1

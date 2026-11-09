@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from conftest import REPO_ROOT, SCRIPTS_DIR, ShellRunner
 
 ENVIRONMENT_BIN_DIR: Path = Path(sys.prefix) / "bin"
@@ -48,6 +47,19 @@ def test_shell_sources_pass_shellcheck() -> None:
         capture_output=True,
         text=True,
         check=False,
+    )
+    assert result_.returncode == 0, result_.stdout + result_.stderr
+
+
+@pytest.mark.parametrize("arguments", [["check"], ["format", "--check"]])
+def test_python_sources_pass_ruff(arguments: list[str]) -> None:
+    """All Python sources follow pyproject.toml: lint rules (typing.Any banned) and formatting."""
+    ruff_ = Find_tool("ruff")
+    if ruff_ is None:
+        pytest.skip("ruff not installed (it is in the conda environment of environment.yml)")
+
+    result_ = subprocess.run(
+        [ruff_, *arguments, "."], cwd=REPO_ROOT, capture_output=True, text=True, check=False
     )
     assert result_.returncode == 0, result_.stdout + result_.stderr
 
