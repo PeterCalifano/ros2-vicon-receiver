@@ -746,7 +746,8 @@ namespace vicon_probe
             const sdk::Output_GetFrameRate rate = client_.GetFrameRate();
             bool previous_frame_stale = false;
             if (previous.has_value() && frame_number.FrameNumber > previous.value() &&
-                rate.Result == sdk::Result::Success && rate.FrameRateHz > 0.0)
+                rate.Result == sdk::Result::Success &&
+                vicon_receiver::is_valid_frame_rate(rate.FrameRateHz))
             {
                 const std::uint64_t missing = frame_number.FrameNumber - previous.value() - 1;
                 // frames_recorded_ already counts the current frame
@@ -799,9 +800,13 @@ namespace vicon_probe
         const sdk::Output_GetLatencyTotal latency = client_.GetLatencyTotal();
         if (errors.check("GetLatencyTotal", latency.Result))
         {
+            // Written as sent; a value that is not a duration stays out of the statistics
             json_.member("latency_total_s", latency.Total);
-            latency_s_.add(latency.Total);
-            console_line += "  latency " + fixed(latency.Total * 1000.0, 1) + " ms";
+            if (vicon_receiver::is_valid_latency(latency.Total))
+            {
+                latency_s_.add(latency.Total);
+                console_line += "  latency " + fixed(latency.Total * 1000.0, 1) + " ms";
+            }
         }
 
         // Latency of each stage of the processing pipeline

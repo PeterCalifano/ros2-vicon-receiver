@@ -59,6 +59,22 @@ namespace acquisition_clock_tests
     // Arguments
     // ---------------------------------------------------------------------------------------------
 
+    TEST(FrameValues, FrameRateMustBePositiveAndFinite)
+    {
+        EXPECT_TRUE(vicon_receiver::is_valid_frame_rate(100.0));
+        EXPECT_FALSE(vicon_receiver::is_valid_frame_rate(0.0));
+        EXPECT_FALSE(vicon_receiver::is_valid_frame_rate(-1.0));
+        EXPECT_FALSE(vicon_receiver::is_valid_frame_rate(std::nan("")));
+    }
+
+    TEST(FrameValues, LatencyMustBeADuration)
+    {
+        EXPECT_TRUE(vicon_receiver::is_valid_latency(0.0));
+        EXPECT_TRUE(vicon_receiver::is_valid_latency(0.03));
+        EXPECT_FALSE(vicon_receiver::is_valid_latency(-0.001));
+        EXPECT_FALSE(vicon_receiver::is_valid_latency(std::nan("")));
+    }
+
     TEST(AcquisitionClock, EmptyWindowIsRejected)
     {
         EXPECT_THROW(AcquisitionClock clock(0), std::invalid_argument);

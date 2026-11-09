@@ -521,7 +521,8 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
     const bool frame_number_ok = frame_number.Result == Result::Success;
 
     const Output_GetFrameRate frame_rate = vicon_client.GetFrameRate();
-    const bool frame_rate_ok = frame_rate.Result == Result::Success && frame_rate.FrameRateHz > 0.0;
+    const bool frame_rate_ok = frame_rate.Result == Result::Success &&
+                               vicon_receiver::is_valid_frame_rate(frame_rate.FrameRateHz);
 
     // A jump larger than what the server can have produced since the previous frame means that
     // the previous frame was stale (the leftovers sent after connecting are already held back by
@@ -565,7 +566,7 @@ void ViconReceiverNode::read_frame_header(const rclcpp::Time &receive_time,
     // Latency of the server pipeline (0 if not reported or not a valid duration), and of each
     // of its stages
     const Output_GetLatencyTotal latency = vicon_client.GetLatencyTotal();
-    if (latency.Result == Result::Success && std::isfinite(latency.Total) && latency.Total >= 0.0)
+    if (latency.Result == Result::Success && vicon_receiver::is_valid_latency(latency.Total))
     {
         frame_msg.latency_total_s = latency.Total;
     }

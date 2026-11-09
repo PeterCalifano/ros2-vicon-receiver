@@ -10,6 +10,7 @@
 #ifndef VICON_RECEIVER_FRAME_TIMING_HPP
 #define VICON_RECEIVER_FRAME_TIMING_HPP
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -20,6 +21,18 @@ namespace vicon_receiver
     // --------------------------------------------------------------------------------------------
     // Acquisition time of the frames
     // --------------------------------------------------------------------------------------------
+
+    /// Whether a frame rate from the server can convert frame numbers into time.
+    [[nodiscard]] inline bool is_valid_frame_rate(const double frame_rate_hz)
+    {
+        return std::isfinite(frame_rate_hz) && frame_rate_hz > 0.0;
+    }
+
+    /// Whether a latency from the server is a duration.
+    [[nodiscard]] inline bool is_valid_latency(const double latency_s)
+    {
+        return std::isfinite(latency_s) && latency_s >= 0.0;
+    }
 
     /**
      * @brief Estimates when the cameras acquired each Vicon frame, on the local (receive) clock.
