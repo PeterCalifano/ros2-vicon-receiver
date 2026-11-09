@@ -173,11 +173,13 @@ add_ros_apt_repository()
     local deb_url="https://github.com/${ROS_APT_SOURCE_REPO}/releases/download/${release_tag}/${deb_name}"
     local download_dir=""
     download_dir="$(mktemp -d)"
+    # Also removed when a step below stops the script (set -e); expanded now, as it is local
+    # shellcheck disable=SC2064
+    trap "rm -rf '${download_dir}'" EXIT
     local deb_file="${download_dir}/${deb_name}"
 
     info "Downloading ${deb_name}"
     if ! curl -fsSL -o "${deb_file}" "${deb_url}"; then
-        rm -rf "${download_dir}"
         die "Download failed: ${deb_url}" \
             "Check the network/proxy, or pin another release with ROS_APT_SOURCE_VERSION."
     fi
@@ -185,6 +187,7 @@ add_ros_apt_repository()
     info "Installing ros2-apt-source ${release_tag} (sudo)"
     sudo dpkg -i "${deb_file}"
     rm -rf "${download_dir}"
+    trap - EXIT
 }
 
 # Install ROS 2 (base variant + development tools) if it is not installed.
@@ -192,12 +195,14 @@ install_ros_if_missing()
 {
     if [[ -f "${VICON_ROS_SETUP_FILE}" ]]; then
         info "ROS 2 ${VICON_ROS_DISTRO} found (${VICON_ROS_SETUP_FILE})."
-        return 0
+    else
+        info "ROS 2 ${VICON_ROS_DISTRO} not found: installing it from the official apt repository."
+        add_ros_apt_repository
+        ensure_apt_packages "ros-${VICON_ROS_DISTRO}-ros-base"
     fi
 
-    info "ROS 2 ${VICON_ROS_DISTRO} not found: installing it from the official apt repository."
-    add_ros_apt_repository
-    ensure_apt_packages "ros-${VICON_ROS_DISTRO}-ros-base" "ros-dev-tools"
+    # rosdep and colcon; a machine can have ROS 2 without them
+    ensure_apt_packages "ros-dev-tools"
 }
 
 # Initialise rosdep once, refresh its database and install the package dependencies.
@@ -209,7 +214,9 @@ install_rosdep_dependencies()
     fi
 
     info "Updating the rosdep database"
-    rosdep update --rosdistro "${VICON_ROS_DISTRO}"
+    if ! rosdep update --rosdistro "${VICON_ROS_DISTRO}"; then
+        warn "rosdep update failed (no network?): using the rosdep database of this machine."
+    fi
 
     info "Installing package dependencies with rosdep"
     rosdep install \

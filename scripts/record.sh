@@ -37,7 +37,8 @@ to an MCAP bag, in a new session directory <DIR>/<UTC time>[_TAG]/ with the bag,
 copies of the configuration, meta.yaml and the bag summary.
 
 Stop the recording with Ctrl+C, or with SIGTERM (kill -TERM <pid>) when another
-script started it in the background: there it ignores SIGINT.
+script started it in the background: there it ignores SIGINT. Closing the
+terminal (SIGHUP) also closes the bag cleanly.
 
 Options:
   -c, --config FILE  Node parameters file (default: config/vicon_client.yaml);
@@ -48,7 +49,7 @@ Options:
   -h, --help         Show this help and exit
 
 Exit status: 0 when the bag was closed cleanly, 1 otherwise (node not running,
-recorder error, or no closed bag).
+empty namespace, recorder error, or no closed bag).
 
 Examples:
   scripts/record.sh
@@ -94,6 +95,16 @@ require_node_running()
     nodes="$(timeout 20 ros2 node list --no-daemon 2>/dev/null || true)"
     if ! grep -qx "/${VICON_NODE_NAME}" <<<"${nodes}"; then
         die "Node /${VICON_NODE_NAME} not found: start it first (scripts/launch.sh)."
+    fi
+}
+
+# Ask the recorder to close the bag and stop.
+#   $1  process id of the recorder; empty while it has not been started
+stop_recorder()
+{
+    local recorder_pid="$1"
+    if [[ -n "${recorder_pid}" ]]; then
+        kill -TERM "${recorder_pid}" 2>/dev/null || true
     fi
 }
 
@@ -165,16 +176,26 @@ main()
     config_file="$(realpath "${config_file}")"
     require_workspace
     vicon_configure_dds
-    require_node_running
 
     # Read before creating anything: a missing entry stops here
     local namespace=""
     namespace="$(read_config_param "${config_file}" namespace)"
     namespace="${namespace#/}"
+    if [[ -z "${namespace}" ]]; then
+        die "The namespace in ${config_file} is empty: the topics to record cannot be selected."
+    fi
     local vicon_host=""
     vicon_host="$(read_config_param "${config_file}" hostname)"
     local stream_mode=""
     stream_mode="$(read_config_param "${config_file}" stream_mode)"
+    local extra_configs=()
+    if [[ -f "${DEFAULT_VIEWER_CONFIG_FILE}" ]]; then
+        local mount_file=""
+        mount_file="$(read_config_key_path "${DEFAULT_VIEWER_CONFIG_FILE}" robot.mount_file)"
+        extra_configs=("${DEFAULT_VIEWER_CONFIG_FILE}" "$(absolute_repo_path "${mount_file}")")
+    fi
+
+    require_node_running
 
     # One directory per session; never overwrite an existing one
     mkdir -p "${output_dir}"
@@ -188,29 +209,40 @@ main()
 
     # Configuration used for this session
     cp "${config_file}" "${session_dir}/config/vicon_client.yaml"
-    for extra_config in "${DEFAULT_VIEWER_CONFIG_FILE}" "${REPO_ROOT}/config/g1_mount.yaml"; do
+    local extra_config=""
+    for extra_config in "${extra_configs[@]}"; do
         if [[ -f "${extra_config}" ]]; then
             cp "${extra_config}" "${session_dir}/config/"
         fi
     done
     write_start_metadata "${session_dir}" "${namespace}" "${vicon_host}" "${stream_mode}"
 
-    info "Recording to ${session_dir}/bag (Ctrl+C to stop)"
-    ros2 bag record -s mcap -o "${session_dir}/bag" \
-        -e "^(/${namespace}/.*|/tf|/tf_static)$" &
-    local recorder_pid=$!
-
-    # Ctrl+C (SIGINT) or SIGTERM stop the recording: the recorder gets SIGTERM, on which it
-    # closes the bag cleanly. SIGINT is not forwarded because a recorder started by a script
-    # in the background inherits SIGINT as ignored (POSIX), e.g. under a service manager.
+    # Ctrl+C (SIGINT), SIGTERM or a closed terminal (SIGHUP) stop the recording: the recorder gets
+    # SIGTERM, on which it closes the bag cleanly. SIGINT is not forwarded because a recorder
+    # started by a script in the background inherits SIGINT as ignored (POSIX), e.g. under a
+    # service manager. Installed before the recorder starts, so that no signal can orphan it.
+    local recorder_pid=""
     local stop_requested="false"
-    trap 'stop_requested="true"; kill -TERM "${recorder_pid}" 2>/dev/null || true' INT TERM
+    trap 'stop_requested="true"; stop_recorder "${recorder_pid}"' INT TERM HUP
+
+    info "Recording to ${session_dir}/bag (Ctrl+C to stop)"
+    # A closed terminal also sends SIGHUP to the recorder: it must wait for our SIGTERM instead
+    (
+        trap '' HUP
+        exec ros2 bag record -s mcap -o "${session_dir}/bag" \
+            -e "^(/${namespace}/.*|/tf|/tf_static)$"
+    ) &
+    recorder_pid=$!
+    # A signal that arrived while the recorder was being started
+    if [[ "${stop_requested}" == "true" ]]; then
+        stop_recorder "${recorder_pid}"
+    fi
 
     # wait returns early when a trapped signal arrives: wait again until the recorder is done
     while kill -0 "${recorder_pid}" 2>/dev/null; do
         wait "${recorder_pid}" || true
     done
-    trap - INT TERM
+    trap - INT TERM HUP
 
     # Exit status of the recorder (bash keeps it after the process has ended)
     local recorder_status=0

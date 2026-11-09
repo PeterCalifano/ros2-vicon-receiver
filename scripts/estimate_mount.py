@@ -30,6 +30,9 @@ TOOLS_DIR: Path = REPO_ROOT / "vicon_receiver_tools"
 DEFAULT_VIEWER_CONFIG: Path = REPO_ROOT / "config" / "viewer.yaml"
 SCRIPT_NAME: str = Path(__file__).name
 
+# Set before restarting in the conda environment, to stop if the restart did not get there
+RESTART_GUARD: str = "VICON_ESTIMATE_MOUNT_RESTARTED"
+
 USAGE: str = f"""Usage: {SCRIPT_NAME} -r FILE [-c FILE] [--write] [-h]
 
 Estimate the pose of the robot mount link (robot.mount_link) in the Vicon body
@@ -83,7 +86,11 @@ def Tools_env_prefix(name: str) -> Path | None:
     conda_ = os.environ.get("CONDA_EXE") or shutil.which("conda")
     if not conda_:
         return None
-    listing_ = subprocess.run([conda_, "env", "list"], capture_output=True, text=True, check=False).stdout
+    try:
+        listing_ = subprocess.run([conda_, "env", "list"], capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as error_:
+        print(f"[{SCRIPT_NAME}] WARNING: conda env list failed: {error_}", file=sys.stderr)
+        return None
     for line_ in listing_.splitlines():
         fields_ = line_.split()
         if fields_ and fields_[0] == name:
@@ -141,10 +148,13 @@ def Main(argv: list[str]) -> int:
     # trimesh and yourdfpy live in the conda environment of the tools
     env_name_ = Tools_env_name()
     if Path(sys.prefix).name != env_name_:
+        if os.environ.get(RESTART_GUARD):
+            return Fail(f"restarted with {sys.executable}, which is not the environment '{env_name_}'.")
         prefix_ = Tools_env_prefix(env_name_)
         if prefix_ is None or not (prefix_ / "bin" / "python").exists():
             return Fail(f"Conda environment '{env_name_}' not found. Create it with: conda env create -f {ENVIRONMENT_FILE}")
         env_python_ = str(prefix_ / "bin" / "python")
+        os.environ[RESTART_GUARD] = "1"
         os.execv(env_python_, [env_python_, str(Path(__file__).resolve()), *argv])
 
     # Tools from their sources, as the shell scripts do (works before the build)
@@ -197,7 +207,10 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
         mount_path_ = REPO_ROOT / config_.robot.mount_file
         resolved_ = recording.resolve()
         shown_ = resolved_.relative_to(REPO_ROOT) if resolved_.is_relative_to(REPO_ROOT) else resolved_
-        mount_estimate.Write_mount_file(mount_path_, mount_link_, config_.robot.subject, estimate_, str(shown_))
+        try:
+            mount_estimate.Write_mount_file(mount_path_, mount_link_, config_.robot.subject, estimate_, str(shown_))
+        except OSError as error_:
+            return Fail(f"cannot write {mount_path_}: {error_}")
         print(f"written: {mount_path_}")
     return 0
 

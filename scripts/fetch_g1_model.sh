@@ -69,15 +69,13 @@ main()
     local urdf=""
     urdf="$(read_config_key_path "${viewer_config}" robot.urdf)"
 
-    # Relative destinations are relative to the repository root
-    if [[ "${directory}" != /* ]]; then
-        directory="${REPO_ROOT}/${directory}"
-    fi
+    directory="$(absolute_repo_path "${directory}")"
     mkdir -p "${directory}"
 
     info "Copying ${source} to ${directory}"
     # Trailing slash on the source: copy its content, not the directory itself
-    if ! rsync -a --info=stats1 "${source%/}/" "${directory}/"; then
+    # BatchMode: fail at once instead of waiting at a password prompt
+    if ! rsync -a --info=stats1 -e 'ssh -o BatchMode=yes' "${source%/}/" "${directory}/"; then
         die "rsync from ${source} failed." \
             "Check that ssh to the host works without a password prompt (ssh-agent, key)."
     fi

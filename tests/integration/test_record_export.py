@@ -61,9 +61,8 @@ def Read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle_))
 
 
-@pytest.fixture
-def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
-    """Record ~4 s of the synthetic stream and return the session directory."""
+def Record_session(ros_env: dict[str, str], tmp_path: Path, stop_signal: signal.Signals) -> Path:
+    """Record ~4 s of the synthetic stream, stop with a signal and return the session directory."""
     environment_ = dict(ros_env)
     environment_["ROS_DOMAIN_ID"] = TEST_DOMAIN_ID
 
@@ -87,8 +86,8 @@ def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
         # Stop only once the recorder is recording: a stop during its start-up leaves no bag
         assert Wait_for_recording(tmp_path, RECORDING_START_TIMEOUT_S), "the recorder did not start"
         time.sleep(RECORDING_DURATION_S)
-        # Ctrl+C: the recorder closes the bag and completes the session
-        os.killpg(recorder_.pid, signal.SIGINT)
+        # The signal reaches the whole group, as Ctrl+C or a closed terminal do
+        os.killpg(recorder_.pid, stop_signal)
         output_, _ = recorder_.communicate(timeout=60)
         assert recorder_.returncode == 0, output_
     finally:
@@ -106,12 +105,20 @@ def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
     return sessions_[0]
 
 
+@pytest.fixture
+def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
+    """Session stopped with Ctrl+C."""
+    return Record_session(ros_env, tmp_path, signal.SIGINT)
+
+
 def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> None:
     """MCAP session with metadata, then CSV and HDF5 exports with the injected pattern."""
     session_ = recorded_session
     assert session_.name.endswith("_test")
     assert list((session_ / "bag").glob("*.mcap")), "no MCAP file"
     assert (session_ / "config" / "vicon_client.yaml").is_file()
+    # The mount file named by the viewer config
+    assert (session_ / "config" / "g1_mount.yaml").is_file()
     assert "Topic: /vicon/frame" in (session_ / "bag_info.txt").read_text(encoding="utf-8")
 
     metadata_ = yaml.safe_load((session_ / "meta.yaml").read_text(encoding="utf-8"))
@@ -208,6 +215,31 @@ def test_record_stops_before_creating_a_session_on_a_missing_entry(
     assert result_.returncode != 0, result_.stdout
     assert "stream_mode" in result_.stderr
     assert not output_dir_.exists() or not any(output_dir_.iterdir())
+
+
+def test_closing_the_terminal_closes_the_bag(ros_env: dict[str, str], tmp_path: Path) -> None:
+    """SIGHUP to the whole group: the recorder survives it and closes the bag on our SIGTERM."""
+    session_ = Record_session(ros_env, tmp_path, signal.SIGHUP)
+    assert (session_ / "bag" / "metadata.yaml").is_file()
+    assert "stop_utc" in yaml.safe_load((session_ / "meta.yaml").read_text(encoding="utf-8"))
+
+
+def test_record_refuses_an_empty_namespace(
+    ros_env: dict[str, str], tmp_path: Path, make_config: ConfigFactory
+) -> None:
+    """With an empty namespace the topic filter would match nothing but TF."""
+    output_dir_ = tmp_path / "sessions"
+    result_ = subprocess.run(
+        [str(SCRIPTS_DIR / "record.sh"), "-c", str(make_config(overrides={"namespace": ""})), "-o", str(output_dir_)],
+        env=ros_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result_.returncode == 1
+    assert "namespace" in result_.stderr
+    assert not output_dir_.exists()
 
 
 def test_export_requires_a_format(tmp_path: Path, ros_env: dict[str, str]) -> None:

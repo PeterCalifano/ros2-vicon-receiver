@@ -148,6 +148,7 @@ def Main(argv: list[str]) -> int:
 
     try:
         import rclpy
+        from rclpy.exceptions import InvalidTopicNameException
         from rclpy.executors import ExternalShutdownException
         from sensor_msgs.msg import JointState
     except ImportError as error_:
@@ -159,27 +160,29 @@ def Main(argv: list[str]) -> int:
 
     rclpy.init()
     node_ = rclpy.create_node("g1_joint_states")
-    publisher_ = node_.create_publisher(JointState, config_.joint_states_topic, 10)
     joint_count_ = len(config_.motor_joint_names)
-
-    def _On_lowstate(message: Any) -> None:
-        output_ = JointState()
-        output_.header.stamp = node_.get_clock().now().to_msg()
-        output_.name = list(config_.motor_joint_names)
-        try:
-            output_.position = Motor_angles(message.motor_state, joint_count_)
-        except ValueError as error_:
-            node_.get_logger().error(str(error_), throttle_duration_sec=5.0)
-            return
-        publisher_.publish(output_)
-
-    node_.create_subscription(LowState, config_.lowstate_topic, _On_lowstate, 10)
-    print(
-        f"[{SCRIPT_NAME}] {config_.lowstate_topic} (unitree_hg/LowState) -> "
-        f"{config_.joint_states_topic} (JointState, {joint_count_} joints)"
-    )
     try:
+        publisher_ = node_.create_publisher(JointState, config_.joint_states_topic, 10)
+
+        def _On_lowstate(message: Any) -> None:
+            output_ = JointState()
+            output_.header.stamp = node_.get_clock().now().to_msg()
+            output_.name = list(config_.motor_joint_names)
+            try:
+                output_.position = Motor_angles(message.motor_state, joint_count_)
+            except ValueError as error_:
+                node_.get_logger().error(str(error_), throttle_duration_sec=5.0)
+                return
+            publisher_.publish(output_)
+
+        node_.create_subscription(LowState, config_.lowstate_topic, _On_lowstate, 10)
+        print(
+            f"[{SCRIPT_NAME}] {config_.lowstate_topic} (unitree_hg/LowState) -> "
+            f"{config_.joint_states_topic} (JointState, {joint_count_} joints)"
+        )
         rclpy.spin(node_)
+    except InvalidTopicNameException as error_:
+        return Fail(f"invalid topic in {config_path_}: {error_}")
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:

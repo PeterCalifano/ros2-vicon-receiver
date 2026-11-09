@@ -135,6 +135,21 @@ def test_estimate_mount_requires_a_recording(shell: ShellRunner) -> None:
     assert "A probe recording is required (-r)." in result_.stderr
 
 
+def test_estimate_mount_stops_if_the_restart_missed_the_environment(
+    shell: ShellRunner, tmp_path: Path
+) -> None:
+    """After one restart in the conda environment it stops instead of restarting for ever."""
+    recording_ = tmp_path / "recording.json"
+    recording_.write_text("{}", encoding="utf-8")
+    result_ = shell.run_script(
+        "estimate_mount.py",
+        ["-r", str(recording_)],
+        extra_env={"PATH": "/usr/bin:/bin", "VICON_ESTIMATE_MOUNT_RESTARTED": "1"},
+    )
+    assert result_.returncode == 1
+    assert "which is not the environment" in result_.stderr
+
+
 def test_run_tests_rejects_cpp_and_python_together(shell: ShellRunner) -> None:
     """--cpp and --python would run nothing: refused instead of reporting success."""
     result_ = shell.run_script("../tests/run_tests.sh", ["--cpp", "--python"])

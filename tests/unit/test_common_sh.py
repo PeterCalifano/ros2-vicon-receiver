@@ -152,6 +152,35 @@ def test_read_config_param_wrong_node_name(shell: ShellRunner, tmp_path: Path) -
     assert "not found" in result_.stderr
 
 
+def test_read_config_value_ignores_warnings_on_stderr(shell: ShellRunner) -> None:
+    """A warning printed by Python or PyYAML does not become part of the value."""
+    snippet_ = (
+        'run_tools_module() { echo "SomeWarning: deprecated" >&2; echo "10.1.2.3"; }; '
+        'read_config_param "any.yaml" hostname'
+    )
+    result_ = shell.run_common(snippet_)
+    assert result_.returncode == 0, result_.stderr
+    assert result_.stdout.strip() == "10.1.2.3"
+
+
+def test_read_config_value_reports_the_error_message(shell: ShellRunner) -> None:
+    """On failure the message of the config module is in the error."""
+    snippet_ = 'run_tools_module() { echo "key not found" >&2; return 1; }; read_config_param "any.yaml" x'
+    result_ = shell.run_common(f'value=""; value="$({snippet_})"')
+    assert result_.returncode == 1
+    assert "Invalid config file: key not found" in result_.stderr
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [("config/g1_mount.yaml", str(REPO_ROOT / "config" / "g1_mount.yaml")), ("/data/mount.yaml", "/data/mount.yaml")],
+)
+def test_absolute_repo_path(shell: ShellRunner, path: str, expected: str) -> None:
+    """Paths in config files are relative to the repository root, or absolute."""
+    result_ = shell.run_common(f'absolute_repo_path "{path}"')
+    assert result_.stdout.strip() == expected
+
+
 def test_read_config_key_path_reads_nested_values(shell: ShellRunner, tmp_path: Path) -> None:
     """Values of other config files (viewer.yaml) are read by their dotted key path."""
     config_ = tmp_path / "viewer.yaml"

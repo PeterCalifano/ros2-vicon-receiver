@@ -260,6 +260,18 @@ require_config_file()
     fi
 }
 
+# Print a path given in a config file as an absolute path.
+#   $1  path; a relative one is relative to the repository root
+absolute_repo_path()
+{
+    local path="$1"
+    if [[ "${path}" == /* ]]; then
+        printf '%s\n' "${path}"
+    else
+        printf '%s\n' "${REPO_ROOT}/${path}"
+    fi
+}
+
 # Print one value of a YAML config file (see vicon_receiver_tools/vicon_receiver_tools/config.py).
 # Terminates with a clear error if the file cannot be parsed or the key is missing.
 #   $1   config file
@@ -268,10 +280,18 @@ read_config_value()
 {
     local config_file="$1"
     shift
-    # On success the module prints only the value; on failure only the error message.
+    # The value is on stdout, the error message on stderr: a warning on stderr (Python, PyYAML)
+    # must not become part of the value.
+    local errors_file=""
+    errors_file="$(mktemp)"
     local output=""
-    if ! output="$(run_tools_module config "${config_file}" "$@" 2>&1)"; then
-        die "Invalid config file: ${output}"
+    local status=0
+    output="$(run_tools_module config "${config_file}" "$@" 2>"${errors_file}")" || status=$?
+    local errors=""
+    errors="$(cat "${errors_file}")"
+    rm -f "${errors_file}"
+    if [[ ${status} -ne 0 ]]; then
+        die "Invalid config file: ${errors}"
     fi
     printf '%s\n' "${output}"
 }
