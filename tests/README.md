@@ -90,7 +90,7 @@ Tests marked `vicon_live` record from a real Vicon DataStream server and are ski
 `VICON_LIVE_HOST` is set:
 
 ```bash
-VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live
+VICON_LIVE_HOST=192.0.2.10 python3 -m pytest tests -m vicon_live
 ```
 
 ## Developer tools

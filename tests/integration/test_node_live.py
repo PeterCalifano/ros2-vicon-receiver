@@ -1,7 +1,7 @@
 """Live test of the vicon_client node against a real Vicon server (opt-in).
 
 Runs only when VICON_LIVE_HOST is set, e.g.
-    VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live
+    VICON_LIVE_HOST=192.0.2.10 python3 -m pytest tests -m vicon_live
 
 The node runs through scripts/launch.sh with the repository config (hostname replaced); a
 subscriber in another process receives ViconFrame messages and checks their content.

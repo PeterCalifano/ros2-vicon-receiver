@@ -49,7 +49,7 @@ Examples:
   tests/run_tests.sh
   tests/run_tests.sh --python -- -k reachable -v
   tests/run_tests.sh --cpp --no-build
-  VICON_LIVE_HOST=10.250.223.40 tests/run_tests.sh --python -- -m vicon_live
+  VICON_LIVE_HOST=192.0.2.10 tests/run_tests.sh --python -- -m vicon_live
 EOF
 }
 

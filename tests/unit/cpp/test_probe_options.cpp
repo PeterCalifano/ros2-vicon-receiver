@@ -67,11 +67,11 @@ TEST(ProbeOptions, AllOptionsInAnyOrder)
                                                       "--timeout-ms",
                                                       "500",
                                                       "--host",
-                                                      "10.250.223.40:801",
+                                                      "192.0.2.10:801",
                                                       "--stream-mode",
                                                       "ClientPullPreFetch"});
 
-    EXPECT_EQ(options.host, "10.250.223.40:801");
+    EXPECT_EQ(options.host, "192.0.2.10:801");
     EXPECT_EQ(options.frame_count, 5u);
     EXPECT_EQ(options.json_path, "out.json");
     ASSERT_TRUE(options.connection_timeout_ms.has_value());

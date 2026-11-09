@@ -68,7 +68,7 @@ failed, 3 output file not writable, 4 stream lost while recording.
 
 Examples:
   scripts/probe.sh
-  scripts/probe.sh --host 10.250.223.40 -n 500 -o session.json
+  scripts/probe.sh --host 192.0.2.10 -n 500 -o session.json
   scripts/probe.sh --stream-mode ClientPull -n 2000
 EOF
 }

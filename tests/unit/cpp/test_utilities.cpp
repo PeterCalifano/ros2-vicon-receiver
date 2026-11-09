@@ -166,7 +166,7 @@ namespace tcp_keepalive_tests
 
     TEST(TcpKeepalive, ServerPortDefaultsToDataStreamPort)
     {
-        EXPECT_EQ(server_port("10.250.223.40"), 801);
+        EXPECT_EQ(server_port("192.0.2.10"), 801);
         EXPECT_EQ(server_port("vicon-pc"), 801);
         EXPECT_EQ(server_port("127.0.0.1:9000"), 9000);
         // IPv6 address without port
