@@ -180,7 +180,7 @@ void ViconReceiverNode::read_frame_parameters()
     }
     frame_queue_depth = static_cast<std::size_t>(queue_depth);
 
-    // Run of consecutive frame numbers that confirms the live stream after connecting
+    // Run of increasing frame numbers that confirms the live stream after connecting
     const std::int64_t confirmation_frames =
         this->get_parameter("live_stream_confirmation_frames").as_int();
     if (confirmation_frames < 2)

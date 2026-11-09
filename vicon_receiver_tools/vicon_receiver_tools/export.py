@@ -120,6 +120,20 @@ def Stamp_seconds(stamp: Time) -> float:
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
 
+def Claim_output(owners: dict[str, tuple[str, ...]], output: str, owner: tuple[str, ...]) -> None:
+    """Keep one source per output file or group: different names can convert to the same one.
+
+    Raises:
+        ExportError: If another subject or segment already writes to this output.
+    """
+    known_ = owners.setdefault(output, owner)
+    if known_ != owner:
+        raise ExportError(
+            f"{'/'.join(known_)} and {'/'.join(owner)} would be mixed in {output}: "
+            "rename one of them in Vicon Tracker"
+        )
+
+
 def Safe_name(name: str) -> str:
     """Name usable in a file name or an HDF5 path (no '/' or spaces)."""
     return "".join(
@@ -172,6 +186,7 @@ class CsvExporter:
     output_dir: Path
     _files: dict[str, TextIO] = field(default_factory=dict, repr=False)
     _writers: dict[str, CsvRowWriter] = field(default_factory=dict, repr=False)
+    _owners: dict[str, tuple[str, ...]] = field(default_factory=dict, repr=False)
 
     name: str = "csv"
 
@@ -203,7 +218,9 @@ class CsvExporter:
         for subject_ in frame.subjects:
             quality_ = subject_.quality if subject_.quality_valid else ""
             for segment_ in subject_.segments:
-                self._writer(f"poses_{Safe_name(segment_.frame_id)}.csv", POSE_COLUMNS).writerow(
+                poses_file_ = f"poses_{Safe_name(segment_.frame_id)}.csv"
+                Claim_output(self._owners, poses_file_, (subject_.name, segment_.name))
+                self._writer(poses_file_, POSE_COLUMNS).writerow(
                     [
                         frame.frame_number,
                         f"{stamp_:.9f}",
@@ -221,9 +238,9 @@ class CsvExporter:
                 )
 
             if subject_.markers:
-                writer_ = self._writer(
-                    f"markers_{Safe_name(subject_.ros_name)}.csv", MARKER_COLUMNS
-                )
+                markers_file_ = f"markers_{Safe_name(subject_.ros_name)}.csv"
+                Claim_output(self._owners, markers_file_, (subject_.name,))
+                writer_ = self._writer(markers_file_, MARKER_COLUMNS)
                 for marker_ in subject_.markers:
                     writer_.writerow(
                         [
@@ -271,6 +288,7 @@ class Hdf5Exporter:
     _segments: dict[tuple[str, str], dict[int, SegmentRow]] = field(default_factory=dict)
     _markers: dict[tuple[str, str], dict[int, MarkerRow]] = field(default_factory=dict)
     _quality: dict[str, dict[int, float]] = field(default_factory=dict)
+    _owners: dict[str, tuple[str, ...]] = field(default_factory=dict, repr=False)
 
     def add(self, frame: ViconFrame) -> None:
         """Store one frame."""
@@ -285,11 +303,18 @@ class Hdf5Exporter:
 
         for subject_ in frame.subjects:
             subject_key_ = Safe_name(subject_.name)
+            Claim_output(self._owners, f"subjects/{subject_key_}", (subject_.name,))
             self._quality.setdefault(subject_key_, {})[index_] = (
                 subject_.quality if subject_.quality_valid else math.nan
             )
             for segment_ in subject_.segments:
-                self._segments.setdefault((subject_key_, Safe_name(segment_.name)), {})[index_] = (
+                segment_key_ = Safe_name(segment_.name)
+                Claim_output(
+                    self._owners,
+                    f"subjects/{subject_key_}/segments/{segment_key_}",
+                    (subject_.name, segment_.name),
+                )
+                self._segments.setdefault((subject_key_, segment_key_), {})[index_] = (
                     (segment_.position.x, segment_.position.y, segment_.position.z),
                     (
                         segment_.orientation.x,
@@ -301,7 +326,13 @@ class Hdf5Exporter:
                     bool(segment_.rotation_occluded),
                 )
             for marker_ in subject_.markers:
-                self._markers.setdefault((subject_key_, Safe_name(marker_.name)), {})[index_] = (
+                marker_key_ = Safe_name(marker_.name)
+                Claim_output(
+                    self._owners,
+                    f"subjects/{subject_key_}/markers/{marker_key_}",
+                    (subject_.name, marker_.name),
+                )
+                self._markers.setdefault((subject_key_, marker_key_), {})[index_] = (
                     (marker_.position.x, marker_.position.y, marker_.position.z),
                     bool(marker_.occluded),
                     len(marker_.camera_ids),

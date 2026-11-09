@@ -223,10 +223,22 @@ namespace vicon_receiver
             return true;
         }
 
-        // Extend the run of consecutive frame numbers, or start a new one at this frame
-        const bool consecutive = previous_frame_number_.has_value() &&
-                                 frame_number == previous_frame_number_.value() + 1;
-        if (consecutive)
+        // A forward step continues the run if the frames it skips can have been produced since
+        // the previous frame: a consumer slower than the camera (ClientPull) skips frame numbers
+        // on a healthy stream, while the jump after leftovers arrives at once
+        bool continues_run = false;
+        if (previous_frame_number_.has_value() && frame_number > previous_frame_number_.value())
+        {
+            const std::uint64_t frames_missing = frame_number - previous_frame_number_.value() - 1;
+            continues_run =
+                is_valid_frame_rate(frame_rate_hz)
+                    ? !is_implausible_frame_jump(frames_missing,
+                                                 receive_time_s - previous_receive_time_s_,
+                                                 frame_rate_hz,
+                                                 0.0)
+                    : frames_missing == 0;
+        }
+        if (continues_run)
         {
             run_length_ += 1;
         }
@@ -234,14 +246,18 @@ namespace vicon_receiver
         {
             run_length_ = 1;
             run_start_time_s_ = receive_time_s;
+            run_start_frame_number_ = frame_number;
         }
         previous_frame_number_ = frame_number;
+        previous_receive_time_s_ = receive_time_s;
 
         // Long enough, and not a burst of buffered frames
         if (run_length_ >= consecutive_frames_)
         {
             const double nominal_span_s =
-                frame_rate_hz > 0.0 ? static_cast<double>(run_length_ - 1) / frame_rate_hz : 0.0;
+                is_valid_frame_rate(frame_rate_hz)
+                    ? static_cast<double>(frame_number - run_start_frame_number_) / frame_rate_hz
+                    : 0.0;
             if (receive_time_s - run_start_time_s_ >= kMinRunSpanFraction * nominal_span_s)
             {
                 confirmed_ = true;

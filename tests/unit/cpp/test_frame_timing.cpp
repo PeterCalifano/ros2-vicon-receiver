@@ -478,6 +478,35 @@ namespace startup_leftover_frame_filter_tests
         EXPECT_TRUE(filter.accept(12, 0.0, 0.0));
     }
 
+    TEST(StartupLeftoverFrameFilter, ConsumerSlowerThanTheCameraIsConfirmed)
+    {
+        // ClientPull at 50 Hz from a 100 Hz camera: every other frame number, on a healthy stream
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(1, 0.00, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(3, 0.02, kFilterRateHz));
+        EXPECT_TRUE(filter.accept(5, 0.04, kFilterRateHz));
+        EXPECT_TRUE(filter.confirmed());
+    }
+
+    TEST(StartupLeftoverFrameFilter, SkippedFramesArrivingAtOnceAreNotARun)
+    {
+        // The frames skipped in 1 ms cannot have been produced: buffered, not live
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(10, 0.0000, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(12, 0.0005, kFilterRateHz));
+        EXPECT_FALSE(filter.accept(14, 0.0010, kFilterRateHz));
+        EXPECT_FALSE(filter.confirmed());
+    }
+
+    TEST(StartupLeftoverFrameFilter, UnknownRateNeedsConsecutiveFrameNumbers)
+    {
+        StartupLeftoverFrameFilter filter(kConfirmationFrames);
+        EXPECT_FALSE(filter.accept(1, 0.00, 0.0));
+        EXPECT_FALSE(filter.accept(3, 0.02, 0.0));
+        EXPECT_FALSE(filter.accept(5, 0.04, 0.0));
+        EXPECT_FALSE(filter.confirmed());
+    }
+
     TEST(StartupLeftoverFrameFilter, ConfirmedStreamAcceptsGapsAndRestarts)
     {
         // Once live, dropped frames and server restarts are handled by the gap tracker, not here

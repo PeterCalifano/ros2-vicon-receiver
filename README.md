@@ -271,7 +271,7 @@ The node has no built-in defaults: a missing parameter, a wrong type (e.g. `0` i
 | `acquisition_stamp_window_frames` | int | `1000` | Window (frames) of the acquisition-time estimate |
 | `status_period_s` | double | `1.0` | Period of the console status line, `0.0` disables it |
 | `frame_queue_depth` | int | `100` | Depth of the `ViconFrame` publisher queue (frames kept for a slow subscriber) |
-| `live_stream_confirmation_frames` | int | `3` | Consecutive frame numbers, arriving at a plausible pace, before frames are published after connecting (>= 2) |
+| `live_stream_confirmation_frames` | int | `3` | Increasing frame numbers, arriving at a plausible pace, before frames are published after connecting (>= 2) |
 | `clock_check_measurement_s` | double | `10.0` | Duration of one local-clock-rate measurement [s] |
 | `clock_check_block_s` | double | `1.0` | Blocks at both ends of a measurement whose least delayed frames are compared [s] (measurement > 2 blocks) |
 | `clock_rate_warning_limit` | double | `0.01` | Relative clock rate difference that triggers a warning (0.01 = 1 %) |

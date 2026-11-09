@@ -79,7 +79,7 @@ vicon_client:
 
     # --- Start of a connection ---
     # A Vicon server first sends 1-2 frames left over from its previous session,
-    # back to back. Frames are published once this many consecutive frame numbers
+    # back to back. Frames are published once this many increasing frame numbers
     # have arrived at a plausible pace (>= 2; leftovers were seen consecutive).
     live_stream_confirmation_frames: 3
 

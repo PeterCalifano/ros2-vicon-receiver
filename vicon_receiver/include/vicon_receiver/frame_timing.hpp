@@ -225,10 +225,12 @@ namespace vicon_receiver
      * by a frame-number jump, but not always (two consecutive leftovers were seen while the
      * Tracker was not streaming). Live frames arrive at the frame rate, or a few ms apart while
      * a queue drains. The filter therefore confirms the live stream with a run of
-     * consecutive_frames consecutive frame numbers that arrived over at least half of their
-     * nominal duration, and accepts every frame from then on until restart(). The frames of the
-     * run before the confirming one are lost too: the price of never publishing a pose from the
-     * previous session with a current stamp.
+     * consecutive_frames increasing frame numbers that arrived over at least half of their
+     * nominal duration, and accepts every frame from then on until restart(). A step inside the
+     * run may skip frame numbers if they can have been produced since the previous frame: a
+     * consumer slower than the camera (ClientPull) skips them on a healthy stream. The frames of
+     * the run before the confirming one are lost too: the price of never publishing a pose from
+     * the previous session with a current stamp.
      */
     class StartupLeftoverFrameFilter
     {
@@ -248,7 +250,7 @@ namespace vicon_receiver
          * @param frame_number   Frame number reported by the server.
          * @param receive_time_s Local (monotonic) time at which the frame was received [s].
          * @param frame_rate_hz  Frame rate reported by the server [Hz]; <= 0 if unknown, then
-         *                       only the frame numbers are checked.
+         *                       only consecutive frame numbers count and the timing is unchecked.
          * @return true if the frame is live (to be used), false if it is held back.
          */
         bool accept(std::uint64_t frame_number, double receive_time_s, double frame_rate_hz);
@@ -266,9 +268,12 @@ namespace vicon_receiver
         std::uint64_t consecutive_frames_;
         bool confirmed_ = false;
         std::optional<std::uint64_t> previous_frame_number_;
-        /// Current run of consecutive frame numbers: length and receive time of its first frame
+        double previous_receive_time_s_ = 0.0;
+        /// Current run of increasing frame numbers: length, and receive time and number of its
+        /// first frame
         std::uint64_t run_length_ = 0;
         double run_start_time_s_ = 0.0;
+        std::uint64_t run_start_frame_number_ = 0;
         std::uint64_t rejected_ = 0;
     };
 

@@ -125,3 +125,61 @@ def test_a_format_given_twice_is_exported_once(
     assert len(paths_) == len(set(paths_))
     with (session_dir / "exports" / "frames.csv").open(encoding="utf-8") as stream_:
         assert len(list(csv.DictReader(stream_))) == 2
+
+
+def Two_subject_frame(names: tuple[str, str], frame_ids: tuple[str, str]) -> SimpleNamespace:
+    """A frame with two subjects, with the given subject names and segment frame ids."""
+    frame_ = Make_frame(1)
+    first_ = frame_.subjects[0]
+    second_ = SimpleNamespace(**vars(first_))
+    second_.segments = [SimpleNamespace(**vars(first_.segments[0]))]
+    first_.name, second_.name = names
+    first_.ros_name, second_.ros_name = names
+    first_.segments[0].frame_id, second_.segments[0].frame_id = frame_ids
+    frame_.subjects.append(second_)
+    return frame_
+
+
+def test_csv_export_refuses_segments_sharing_a_file(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """a_b/c and a/b_c have the same frame id: their rows must not be mixed in one file."""
+    Use_frames(monkeypatch, iter([Two_subject_frame(("a_b", "a"), ("a_b_c", "a_b_c"))]))
+    with pytest.raises(ExportError, match=r"would be mixed in poses_a_b_c\.csv"):
+        Export(session_dir, ["csv"], topic=TOPIC)
+    assert list((session_dir / "exports").iterdir()) == []
+
+
+def test_hdf5_export_refuses_subjects_sharing_a_group(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Names that convert to the same HDF5 group are refused too."""
+    Use_frames(monkeypatch, iter([Two_subject_frame(("a b", "a_b"), ("first", "second"))]))
+    with pytest.raises(ExportError, match="would be mixed in subjects/a_b"):
+        Export(session_dir, ["hdf5"], topic=TOPIC)
+
+
+def test_hdf5_export_refuses_segments_sharing_a_key(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two segments of one subject that convert to one name would overwrite each other."""
+    frame_ = Make_frame(1)
+    first_ = frame_.subjects[0].segments[0]
+    second_ = SimpleNamespace(**vars(first_))
+    first_.name, second_.name = "a b", "a_b"
+    frame_.subjects[0].segments.append(second_)
+    Use_frames(monkeypatch, iter([frame_]))
+    with pytest.raises(ExportError, match="would be mixed in subjects/body/segments/a_b"):
+        Export(session_dir, ["hdf5"], topic=TOPIC)
+
+
+def test_export_keeps_distinct_segments_apart(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two subjects with their own frame ids get their own files, on every frame."""
+    frames_ = [Two_subject_frame(("a", "b"), ("a_body", "b_body")) for _ in range(2)]
+    Use_frames(monkeypatch, iter(frames_))
+    count_, _ = Export(session_dir, ["csv"], topic=TOPIC)
+    assert count_ == 2
+    assert (session_dir / "exports" / "poses_a_body.csv").is_file()
+    assert (session_dir / "exports" / "poses_b_body.csv").is_file()
