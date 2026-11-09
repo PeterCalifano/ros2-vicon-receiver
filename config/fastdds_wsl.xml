@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS profile for WSL with mirrored networking (networkingMode=mirrored).
+
+  Problem: WSL mirrored networking routes every TCP/UDP packet for 127.0.0.1 to Windows
+  (ip rule "ipproto udp lookup 127" -> "127.0.0.1 via ... dev loopback0"), so the default
+  localhost discovery of DDS never reaches the other ROS 2 processes on this machine.
+
+  Fix: use only the second address of the Linux loopback device, 10.255.255.254, which is not
+  redirected, plus shared memory for the data. Discovery uses that address as initial peer.
+
+  Scope: ROS 2 traffic stays on this machine (no other hosts). Enabled automatically by
+  scripts/lib/ros_env.sh when the redirection is detected; keep the address in sync with
+  VICON_WSL_LOOPBACK_ADDRESS there.
+-->
+<dds xmlns="http://www.eprosima.com">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>wsl_loopback_udp</transport_id>
+        <type>UDPv4</type>
+        <interfaceWhiteList>
+          <address>10.255.255.254</address>
+        </interfaceWhiteList>
+      </transport_descriptor>
+      <transport_descriptor>
+        <transport_id>wsl_shared_memory</transport_id>
+        <type>SHM</type>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="wsl_loopback_participant" is_default_profile="true">
+      <rtps>
+        <useBuiltinTransports>false</useBuiltinTransports>
+        <userTransports>
+          <transport_id>wsl_loopback_udp</transport_id>
+          <transport_id>wsl_shared_memory</transport_id>
+        </userTransports>
+        <builtin>
+          <initialPeersList>
+            <locator>
+              <udpv4>
+                <address>10.255.255.254</address>
+              </udpv4>
+            </locator>
+          </initialPeersList>
+        </builtin>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

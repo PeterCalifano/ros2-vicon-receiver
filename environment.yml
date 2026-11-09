@@ -1,0 +1,33 @@
+# Conda environment of the Python tools of this repository: live viewer, mount estimate, HDF5
+# export, tests and code checks. The node itself does not need it (it is built with colcon and the
+# system ROS 2 Jazzy).
+#
+#   conda env create -f environment.yml      (scripts/build.sh does it if conda is installed)
+#
+# The scripts find this environment by the name below; it does not have to be activated. Do not
+# build the workspace with it activated: colcon and rosidl must use the system Python of ROS 2.
+name: vicon_receiver
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # ROS 2 (rclpy, rosbag2_py, the message packages) comes from the system through the PYTHONPATH of
+  # its setup.bash. Its compiled modules need this Python version and NumPy 1.x.
+  - python=3.12
+  - numpy=1.26
+  - scipy
+  - pyyaml
+  # HDF5 export of recordings (scripts/export.sh --format hdf5)
+  - h5py
+  # Tests and code checks (tests/run_tests.sh, scripts/format.sh)
+  - pytest
+  - clang-format=18.1.8
+  - clang-tools=18.1.8
+  - shellcheck
+  - ruff=0.17
+  - pip
+  - pip:
+      # Live viewer and mount estimate. Pinned: the viewer uses the viser 1.1 scene/GUI API.
+      - viser==1.1.1
+      - yourdfpy==0.0.60
+      - trimesh==5.2.0

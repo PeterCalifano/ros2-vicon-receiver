@@ -1,0 +1,107 @@
+# =============================================================================
+# viewer.yaml - Live viewer (scripts/start_visualizer.sh) and the G1 model it shows.
+#
+# The viewer subscribes to the ViconFrame topic of the vicon_client node and
+# shows it in a browser (viser): subject axes, trail, markers coloured by the
+# number of cameras that saw them, occlusion, the G1 Unitree model attached to
+# its Vicon subject, and the camera frustums. Rendering runs in the browser.
+#
+# Every entry is required. Paths are relative to the repository root.
+# =============================================================================
+viewer:
+  # Web server of the viewer: open http://<host>:<port> in a browser.
+  host: "127.0.0.1"
+  port: 8080
+
+  # ViconFrame topic of the node ("<namespace>/frame").
+  topic: "/vicon/frame"
+
+  # Scene updates per second sent to the browser (frames arrive at 100 Hz).
+  update_rate_hz: 30.0
+
+  # Side of the floor grid around the Vicon origin [m]: large enough for the
+  # tracking volume (the G1 was recorded about 10 m from the origin).
+  grid_size_m: 24.0
+
+  # Number of past positions drawn as a trail behind each subject (sampled at
+  # update_rate_hz: 300 = 10 s at 30 Hz), and how often the trail is redrawn
+  # (it is the largest object sent to the browser).
+  trail_length: 300
+  trail_update_rate_hz: 5.0
+
+  # Radius of the marker spheres [m] (real Vicon markers: ~7 mm).
+  marker_radius_m: 0.007
+
+  # Marker colours by number of cameras that saw the marker in the frame:
+  # >= good_camera_count: green, fewer (or unknown without ray data): yellow.
+  # Occluded markers are not drawn (Vicon sends no position for them).
+  good_camera_count: 4
+
+robot:
+  # Vicon subject the G1 is attached to.
+  subject: "g1-unitree-torso-cam"
+
+  # Where scripts/fetch_g1_model.sh copies the model from (rsync over ssh) and to.
+  # The source is the legged-nav-system G1 profile (URDF + OBJ meshes, ~37 MB).
+  source: "pcalifano-u:devDir/projects-DFKI/legged-nav-system/profiles/g1/"
+  directory: "models/g1"
+  urdf: "model.urdf"
+
+  # G1 link whose pose in the Vicon body frame is given by the mount file.
+  mount_link: "torso_link"
+
+  # Pose of mount_link in the Vicon body frame (written by
+  # scripts/estimate_mount.py and by the "save mount" button of the viewer).
+  mount_file: "config/g1_mount.yaml"
+
+  # Optional: sensor_msgs/JointState topic with the joint angles of the model
+  # (for the G1: scripts/g1_joint_states.py converts unitree_hg/LowState). The
+  # latest value of each joint is kept; joints never received stay at 0. Leave
+  # it out to draw the model at zero joint angles.
+  joint_states_topic: "/joint_states"
+
+# Cameras drawn as frustums, at their optical frames of the G1 URDF (OpenCV
+# convention: z forward, y down). Intrinsics from /camera/camera/*/camera_info of
+# the robot recording dataset-g1-exp2ms-g128-20261019 (RealSense, no distortion).
+cameras:
+  - name: "color"
+    frame: "torso_camera_color_optical_frame"
+    width: 1280
+    height: 720
+    fx: 912.4861
+    fy: 912.3522
+    cx: 645.2643
+    cy: 378.1513
+  - name: "infra1"
+    frame: "torso_camera_infra1_optical_frame"
+    width: 848
+    height: 480
+    fx: 429.4087
+    fy: 429.4087
+    cx: 426.1302
+    cy: 239.5502
+
+# Length of the frustums drawn in the scene [m].
+frustum_scale_m: 0.15
+
+# Estimate of the mount (scripts/estimate_mount.py). The method is generic: link
+# upright (the robot stood upright when the Vicon object was created), heading from
+# marker pairs placed left and right on the robot, position fitted to the meshes.
+# The facts below are specific to this set-up (the markers on our G1).
+mount_estimate:
+  # Distance of a marker centre from the mesh surface [m] (7 mm marker + base).
+  surface_offset_m: 0.010
+  # Marker pairs placed left and right on the robot: the horizontal direction from
+  # the right to the left marker is the link's y axis. Our G1: one pair on the
+  # head, one on the back of the shoulders (same height). Left/right from the
+  # shoulder markers being on the back.
+  lateral_marker_pairs:
+    - left: "g1-unitree-torso-cam6"
+      right: "g1-unitree-torso-cam7"
+    - left: "g1-unitree-torso-cam4"
+      right: "g1-unitree-torso-cam3"
+  # Markers sitting on another link than mount_link and the links fixed to it
+  # (compared with that link's mesh only).
+  marker_links:
+    g1-unitree-torso-cam6: "head_link"
+    g1-unitree-torso-cam7: "head_link"

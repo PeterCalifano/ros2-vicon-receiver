@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Fake 'conda' command for the tests of scripts/lib/common.sh.
+#
+# Put tests/fixtures/fake_bin first in PATH (and empty CONDA_EXE) to make the
+# installed conda environments deterministic:
+#
+#   conda env list   prints $FAKE_CONDA_ENV_LIST
+# =============================================================================
+
+set -Eeuo pipefail
+
+case "$*" in
+    "env list")
+        printf '%s\n' "${FAKE_CONDA_ENV_LIST:-}"
+        ;;
+    *)
+        echo "fake conda: unsupported arguments: $*" >&2
+        exit 64
+        ;;
+esac

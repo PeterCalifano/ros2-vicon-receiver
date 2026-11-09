@@ -1,11 +1,32 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.18)
 project(vicon_receiver)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(VICON_RECEIVER_WERROR "Treat compiler warnings as errors" OFF)
+option(VICON_RECEIVER_SANITIZERS "Build with AddressSanitizer and UBSan" OFF)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
+  if(VICON_RECEIVER_WERROR)
+    add_compile_options(-Werror)
+  endif()
+endif()
+
+# Stricter warnings for the code of this package (not the tests, whose macros trigger them)
+add_library(vicon_receiver_warnings INTERFACE)
+target_compile_options(vicon_receiver_warnings INTERFACE
+  -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual
+  -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2
+)
+
+# Sanitizers: PUBLIC on the libraries below, so that the executables and tests link them too
+add_library(vicon_receiver_sanitizers INTERFACE)
+if(VICON_RECEIVER_SANITIZERS)
+  target_compile_options(vicon_receiver_sanitizers INTERFACE
+    -fsanitize=address,undefined -fno-omit-frame-pointer -g)
+  target_link_options(vicon_receiver_sanitizers INTERFACE -fsanitize=address,undefined)
 endif()
 
 # find dependencies
@@ -15,6 +36,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(vicon_receiver_msgs REQUIRED)
 
 # detect arch
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -93,43 +115,110 @@ set_property(TARGET Boost::thread APPEND PROPERTY
   INTERFACE_LINK_LIBRARIES Threads::Threads)
 
 ###########################################################
-# --- Node executable ---
-add_executable(vicon_client
-  src/communicator.cpp
-  src/publisher.cpp
+# --- Shared code (node and probe, no ROS) ---
+# Timing of the frame stream (frame_timing), small utilities (utilities) and
+# the console status line. Only the Vicon SDK headers are used (no SDK calls),
+# so no library is linked.
+add_library(vicon_common STATIC
+  src/frame_timing.cpp
+  src/utilities.cpp
+  src/console_status_line.cpp
+)
+target_include_directories(vicon_common PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_include_directories(vicon_common SYSTEM PUBLIC
+  "${VICON_SDK_INCLUDE_DIR}"
+  "${VICON_SDK_INCLUDE_DIR}/vicon-datastream-sdk"
+)
+target_link_libraries(vicon_common
+  PUBLIC vicon_receiver_sanitizers
+  PRIVATE vicon_receiver_warnings
 )
 
-# Include our public headers when building this target
-target_include_directories(vicon_client PRIVATE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+###########################################################
+# --- Node library ---
+# The node implementation is compiled once into a static library, linked by the
+# executable and by the unit tests (which construct the node without main()).
+add_library(vicon_receiver_core STATIC
+  src/vicon_receiver_node.cpp
+  src/ros_conversions.cpp
 )
 
-# Link dependencies (use imported targets consistently)
-target_link_libraries(vicon_client
+# Our public headers are needed by every target linking the library
+target_include_directories(vicon_receiver_core PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+# Link dependencies (use imported targets consistently). PUBLIC because the
+# headers include the Vicon SDK, whose library needs the vendored Boost on the
+# link line (the node itself no longer uses Boost).
+target_link_libraries(vicon_receiver_core PUBLIC
+  vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::system Boost::thread Boost::chrono Boost::timer
+  PRIVATE vicon_receiver_warnings
 )
 
-ament_target_dependencies(vicon_client 
+ament_target_dependencies(vicon_receiver_core PUBLIC
   rclcpp
   geometry_msgs
   tf2
   tf2_ros
   tf2_geometry_msgs
+  vicon_receiver_msgs
 )
 
-# Runtime search path so the binary finds libs in the install tree
-set_target_properties(vicon_client PROPERTIES
-  INSTALL_RPATH "\$ORIGIN/../lib"
+###########################################################
+# --- Node executable ---
+add_executable(vicon_client
+  src/main.cpp
+)
+target_link_libraries(vicon_client PRIVATE vicon_receiver_core vicon_receiver_warnings)
+
+###########################################################
+# --- Probe (no ROS) ---
+# vicon_probe records everything a DataStream server sends (scripts/probe.sh).
+# It only needs the Vicon SDK. Its code is a static library so the unit tests
+# can link the testable parts (JSON writer, options).
+add_library(vicon_probe_core STATIC
+  src/probe/json_writer.cpp
+  src/probe/probe_options.cpp
+  src/probe/vicon_probe.cpp
+)
+target_include_directories(vicon_probe_core PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+# The probe does not use Boost itself, but the SDK library needs the vendored
+# Boost thread/chrono libraries and has no runpath: they must be on the link line.
+target_link_libraries(vicon_probe_core PUBLIC
+  vicon_common
+  ViconDataStreamSDK::ViconDataStreamSDK_CPP
+  Boost::thread Boost::chrono
+  PRIVATE vicon_receiver_warnings
+)
+
+add_executable(vicon_probe
+  src/probe/probe_main.cpp
+)
+target_link_libraries(vicon_probe PRIVATE vicon_probe_core vicon_receiver_warnings)
+
+# Runtime search path so the binaries find the vendored libraries in the install tree
+# (executables in lib/vicon_receiver/, libraries in lib/)
+set_target_properties(vicon_client vicon_probe PROPERTIES
+  INSTALL_RPATH "\$ORIGIN/.."
   BUILD_WITH_INSTALL_RPATH OFF
 )
+# The SDK library has no runpath and needs the vendored Boost: an RPATH also applies to the
+# dependencies of a library, a RUNPATH (the linker's default) only to the executable's own.
+foreach(executable vicon_client vicon_probe)
+  target_link_options(${executable} PRIVATE "LINKER:--disable-new-dtags")
+endforeach()
 
-# --- Install: ship SDK + our headers and node ---
+# --- Install: the vendored libraries, the executables and the launch files ---
 include(GNUInstallDirs)
 
-# Install vendored Boost so your installed node finds the same libs at runtime
-install(DIRECTORY "${BOOST_VENDOR_INCLUDE}/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Install vendored Boost so the installed binaries find the same libs at runtime
 install(FILES
   "${BOOST_SYSTEM_LIB}" "${BOOST_THREAD_LIB}" "${BOOST_CHRONO_LIB}" "${BOOST_TIMER_LIB}"
   DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -138,19 +227,71 @@ install(FILES
 install(FILES "${VICON_SDK_LIB}" 
         DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-# install SDK headers into install/include (keeps vendor tree)
-install(DIRECTORY "${VICON_SDK_INCLUDE_DIR}/"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
-# install our public headers (so other pkgs could include vicon_receiver/… if needed)
-install(DIRECTORY include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-# install the node and launch files
-install(TARGETS vicon_client RUNTIME 
+# install the node, the probe and the launch files
+install(TARGETS vicon_client vicon_probe RUNTIME
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
         DESTINATION share/${PROJECT_NAME})
+
+###########################################################
+# --- Unit tests (GoogleTest) ---
+# The C++ unit tests live in the repository-level tests/ folder, next to the
+# Python tests, and are run by `colcon test` (see tests/run_tests.sh). They are
+# skipped when the package is built outside this repository (e.g. when only
+# vicon_receiver/ is copied into another workspace).
+if(BUILD_TESTING)
+  set(VICON_RECEIVER_CPP_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tests/unit/cpp")
+
+  if(EXISTS "${VICON_RECEIVER_CPP_TESTS_DIR}")
+    find_package(ament_cmake_gtest REQUIRED)
+    find_package(tf2_msgs REQUIRED)
+
+    # Probe utilities (no ROS). The SDK library finds the vendored Boost only
+    # through the library path, so its directory is added for the test run.
+    ament_add_gtest(test_probe_core
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_json_writer.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_probe_options.cpp"
+      APPEND_LIBRARY_DIRS "${BOOST_VENDOR_LIBDIR}"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_probe_core vicon_probe_core)
+
+    # Shared code: frame gaps, SDK names, acquisition clock, clock-rate check (pure, no SDK library)
+    ament_add_gtest(test_common
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_frame_timing.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_utilities.cpp"
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_console_status_line.cpp"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_common vicon_common)
+
+    # Vicon names and SDK results -> ROS names, messages and transforms (pure functions)
+    ament_add_gtest(test_ros_conversions
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_ros_conversions.cpp"
+      TIMEOUT 60
+    )
+    target_link_libraries(test_ros_conversions vicon_receiver_core)
+
+    # The test provides its own main() to initialise rclcpp once
+    ament_add_gtest(test_vicon_receiver_node_params
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_vicon_receiver_node_params.cpp"
+      SKIP_LINKING_MAIN_LIBRARIES
+      TIMEOUT 120
+    )
+    target_link_libraries(test_vicon_receiver_node_params vicon_receiver_core)
+    ament_target_dependencies(test_vicon_receiver_node_params tf2_msgs)
+
+    # SegmentPosePublisher creation with Vicon names (needs rclcpp: own main())
+    ament_add_gtest(test_vicon_receiver_node_publishers
+      "${VICON_RECEIVER_CPP_TESTS_DIR}/test_vicon_receiver_node_publishers.cpp"
+      SKIP_LINKING_MAIN_LIBRARIES
+      TIMEOUT 120
+    )
+    target_link_libraries(test_vicon_receiver_node_publishers vicon_receiver_core)
+  else()
+    message(STATUS "C++ unit tests not found at ${VICON_RECEIVER_CPP_TESTS_DIR}: skipped")
+  endif()
+endif()
 
 ament_package()

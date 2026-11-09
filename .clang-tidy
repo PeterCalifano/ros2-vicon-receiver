@@ -1,0 +1,37 @@
+---
+# Static analysis of the package's own C++ code (vendored headers are not reported).
+# Run with tests/unit/test_static_checks.py; needs build/vicon_receiver/compile_commands.json.
+#
+# Naming checks are not enabled: this repository keeps its own naming (CLAUDE.md, Conventions).
+# Turned off, on purpose:
+# - bugprone-easily-swappable-parameters: flags every function taking two doubles;
+# - performance-avoid-endl: the probe's progress lines must be flushed before its blocking calls;
+# - performance-enum-size: a smaller base type gains nothing on a few local enum values.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  clang-analyzer-*,
+  performance-*,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  portability-*,
+  readability-container-size-empty,
+  readability-delete-null-pointer,
+  readability-duplicate-include,
+  readability-else-after-return,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-redundant-member-init,
+  readability-redundant-smartptr-get,
+  readability-redundant-string-cstr,
+  readability-redundant-string-init,
+  readability-simplify-boolean-expr,
+  readability-static-accessed-through-instance,
+  readability-uniqueptr-delete-release
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/vicon_receiver/include/vicon_receiver/.*'
+FormatStyle: none

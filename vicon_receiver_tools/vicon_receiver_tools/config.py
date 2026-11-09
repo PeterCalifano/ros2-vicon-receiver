@@ -1,0 +1,181 @@
+"""Access to the vicon_receiver parameters file (a ROS 2 --params-file YAML).
+
+The file has the layout::
+
+    vicon_client:
+      ros__parameters:
+        hostname: "192.168.10.1"
+        ...
+
+Command line (used by scripts/lib/common.sh)::
+
+    python3 -m vicon_receiver_tools.config CONFIG_FILE PARAM_NAME [--node NODE_NAME]
+
+prints the value of ``NODE_NAME.ros__parameters.PARAM_NAME`` and exits with 0, or prints the
+problem on stderr and exits with 1.
+
+Example::
+
+    $ python3 -m vicon_receiver_tools.config config/vicon_client.yaml hostname
+    192.0.2.10
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import yaml
+
+# Name of the node, i.e. the top-level key of the parameters file
+DEFAULT_NODE_NAME: str = "vicon_client"
+
+# Key of the parameters section under the node name (fixed by ROS 2)
+PARAMETERS_KEY: str = "ros__parameters"
+
+
+# A value of a YAML document, as yaml.safe_load() returns it for our files
+type YamlValue = str | int | float | bool | list[YamlValue] | dict[str, YamlValue] | None
+
+
+class ConfigError(Exception):
+    """The parameters file cannot be read or does not contain the requested entry."""
+
+
+def Load_node_parameters(
+    config_file: Path, node_name: str = DEFAULT_NODE_NAME
+) -> dict[str, YamlValue]:
+    """Return the parameters section of one node from a ROS 2 parameters file.
+
+    Args:
+        config_file: Path of the YAML parameters file.
+        node_name: Top-level key of the node in the file.
+
+    Returns:
+        The mapping under ``node_name.ros__parameters``.
+
+    Raises:
+        ConfigError: If the file cannot be read or parsed, or has no parameters for the node.
+    """
+    document_ = Load_yaml(config_file)
+
+    # Each level must be a mapping; anything else means the layout is wrong
+    node_section_ = document_.get(node_name) if isinstance(document_, dict) else None
+    if not isinstance(node_section_, dict):
+        raise ConfigError(f"section '{node_name}' not found in {config_file}")
+
+    parameters_ = node_section_.get(PARAMETERS_KEY)
+    if not isinstance(parameters_, dict):
+        raise ConfigError(f"section '{node_name}.{PARAMETERS_KEY}' not found in {config_file}")
+
+    return parameters_
+
+
+def Read_parameter(
+    config_file: Path, param_name: str, node_name: str = DEFAULT_NODE_NAME
+) -> YamlValue:
+    """Return the value of one parameter from a ROS 2 parameters file.
+
+    Args:
+        config_file: Path of the YAML parameters file.
+        param_name: Name of the parameter under ``node_name.ros__parameters``.
+        node_name: Top-level key of the node in the file.
+
+    Raises:
+        ConfigError: If the file is invalid or the parameter is missing.
+    """
+    parameters_ = Load_node_parameters(config_file, node_name)
+    if param_name not in parameters_:
+        raise ConfigError(f"{node_name}.{PARAMETERS_KEY}.{param_name} not found in {config_file}")
+    return parameters_[param_name]
+
+
+def Load_yaml(config_file: Path) -> YamlValue:
+    """Load a YAML file.
+
+    Raises:
+        ConfigError: If the file cannot be read or parsed.
+    """
+    try:
+        with config_file.open("r", encoding="utf-8") as stream_:
+            return yaml.safe_load(stream_)
+    except OSError as error_:
+        raise ConfigError(f"cannot read {config_file}: {error_.strerror}") from error_
+    except yaml.YAMLError as error_:
+        raise ConfigError(f"cannot parse {config_file}: {error_}") from error_
+
+
+def Read_value(config_file: Path, key_path: str) -> YamlValue:
+    """Return the value at a dotted key path of any YAML file, e.g. ``robot.directory``.
+
+    Used for the configuration files that are not ROS 2 parameters files (config/viewer.yaml).
+
+    Raises:
+        ConfigError: If the file is invalid or a key of the path is missing.
+    """
+    value_: YamlValue = Load_yaml(config_file)
+    walked_: list[str] = []
+    for key_ in key_path.split("."):
+        walked_.append(key_)
+        if not isinstance(value_, dict) or key_ not in value_:
+            raise ConfigError(f"{'.'.join(walked_)} not found in {config_file}")
+        value_ = value_[key_]
+    return value_
+
+
+def Format_value(value: YamlValue) -> str:
+    """Format a parameter value as text for shell scripts.
+
+    Booleans use the YAML spelling (true/false); lists and mappings use the YAML flow style
+    (e.g. ``[0.0, 0.0, 0.0]``); any other value is converted with str().
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, dict)):
+        return yaml.safe_dump(value, default_flow_style=True).strip()
+    return str(value)
+
+
+def Main(argv: list[str] | None = None) -> int:
+    """Command-line entry point: print one parameter of the parameters file.
+
+    Returns:
+        Process exit code: 0 on success, 1 if the parameter cannot be read.
+    """
+    parser_ = argparse.ArgumentParser(
+        prog="python3 -m vicon_receiver_tools.config",
+        description="Print the value of one parameter from a ROS 2 parameters file.",
+    )
+    parser_.add_argument("config_file", type=Path, help="YAML parameters file")
+    parser_.add_argument(
+        "param_name",
+        help="parameter name under <node>.ros__parameters (or a dotted key path with --key-path)",
+    )
+    parser_.add_argument(
+        "--key-path",
+        action="store_true",
+        help="read param_name as a dotted key path of any YAML file (e.g. robot.directory)",
+    )
+    parser_.add_argument(
+        "--node",
+        default=DEFAULT_NODE_NAME,
+        help=f"top-level node key in the file (default: {DEFAULT_NODE_NAME})",
+    )
+    arguments_ = parser_.parse_args(argv)
+
+    try:
+        if arguments_.key_path:
+            value_ = Read_value(arguments_.config_file, arguments_.param_name)
+        else:
+            value_ = Read_parameter(arguments_.config_file, arguments_.param_name, arguments_.node)
+    except ConfigError as error_:
+        print(error_, file=sys.stderr)
+        return 1
+
+    print(Format_value(value_))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(Main())

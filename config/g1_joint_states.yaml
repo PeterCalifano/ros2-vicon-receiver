@@ -1,0 +1,48 @@
+# =============================================================================
+# g1_joint_states.yaml - Joint states of the G1 for the live viewer.
+#
+# scripts/g1_joint_states.py reads unitree_hg/msg/LowState (motor angles by
+# motor index) and publishes sensor_msgs/msg/JointState (angles by URDF joint
+# name) on the topic that config/viewer.yaml (robot.joint_states_topic) reads.
+#
+# Every entry is required.
+# =============================================================================
+g1_joint_states:
+  # unitree_hg/msg/LowState of the robot (recorded sessions use /rec/lowstate).
+  lowstate_topic: "/lowstate"
+
+  # sensor_msgs/msg/JointState published for the viewer.
+  joint_states_topic: "/joint_states"
+
+  # URDF joint of each motor, in motor index order (LowState.motor_state[i].q).
+  # Motors after the last name (LowState has 35 slots) are not published.
+  motor_joint_names:
+    - left_hip_pitch_joint        # 0
+    - left_hip_roll_joint         # 1
+    - left_hip_yaw_joint          # 2
+    - left_knee_joint             # 3
+    - left_ankle_pitch_joint      # 4
+    - left_ankle_roll_joint       # 5
+    - right_hip_pitch_joint       # 6
+    - right_hip_roll_joint        # 7
+    - right_hip_yaw_joint         # 8
+    - right_knee_joint            # 9
+    - right_ankle_pitch_joint     # 10
+    - right_ankle_roll_joint      # 11
+    - waist_yaw_joint             # 12
+    - waist_roll_joint            # 13
+    - waist_pitch_joint           # 14
+    - left_shoulder_pitch_joint   # 15
+    - left_shoulder_roll_joint    # 16
+    - left_shoulder_yaw_joint     # 17
+    - left_elbow_joint            # 18
+    - left_wrist_roll_joint       # 19
+    - left_wrist_pitch_joint      # 20
+    - left_wrist_yaw_joint        # 21
+    - right_shoulder_pitch_joint  # 22
+    - right_shoulder_roll_joint   # 23
+    - right_shoulder_yaw_joint    # 24
+    - right_elbow_joint           # 25
+    - right_wrist_roll_joint      # 26
+    - right_wrist_pitch_joint     # 27
+    - right_wrist_yaw_joint       # 28

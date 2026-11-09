@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# =============================================================================
+# build.sh - Install everything needed and build the vicon_receiver workspace.
+#
+# The repository root is used as the colcon workspace: build/, install/ and log/
+# are created next to the packages (and are git-ignored).
+#
+# Steps:
+#   1. check the OS (ROS 2 Jazzy binaries target Ubuntu 24.04 "noble");
+#   2. install ROS 2 Jazzy from the official apt repository if missing (sudo);
+#   3. initialise/update rosdep and install the package dependencies (package.xml);
+#   4. build the packages with colcon;
+#   5. create the conda environment of the Python tools (environment.yml), if conda is installed.
+#
+# Options: scripts/build.sh --help
+# =============================================================================
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
+readonly ROSDEP_SOURCES_FILE="/etc/ros/rosdep/sources.list.d/20-default.list"
+readonly ROS_APT_SOURCE_REPO="ros-infrastructure/ros-apt-source"
+
+clean_first=false
+build_type="Release"
+
+usage()
+{
+    cat <<EOF
+Usage: ${SCRIPT_NAME} [--clean] [--debug] [-h]
+
+Install ROS 2 ${VICON_ROS_DISTRO} (if missing) and the package dependencies (rosdep),
+build the packages of this repository with colcon (build/, install/ and log/ at
+the repository root; the C++ tests are not compiled), then create or update the
+conda environment of the Python tools (environment.yml) if conda is installed.
+Steps that need root use sudo.
+
+Options:
+  --clean     Remove build/, install/ and log/ before building
+  --debug     Build with CMAKE_BUILD_TYPE=Debug (default: Release)
+  -h, --help  Show this help and exit
+
+Environment:
+  ROS_APT_SOURCE_VERSION  ros2-apt-source release installed with ROS 2
+                          (default: the latest release on github.com)
+
+Examples:
+  scripts/build.sh
+  scripts/build.sh --clean --debug
+  ROS_APT_SOURCE_VERSION=1.3.0 scripts/build.sh
+EOF
+}
+
+parse_args()
+{
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --clean)
+                clean_first=true
+                ;;
+            --debug)
+                build_type="Debug"
+                ;;
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            *)
+                die_with_usage "Unknown option: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# -----------------------------------------------------------------------------
+# System checks and installation
+# -----------------------------------------------------------------------------
+
+# ROS 2 Jazzy binary packages exist only for Ubuntu 24.04 (noble).
+check_os()
+{
+    local codename=""
+    if [[ -f /etc/os-release ]]; then
+        codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+    fi
+    if [[ "${codename}" != "noble" ]]; then
+        die "Unsupported OS (codename '${codename:-unknown}')." \
+            "ROS 2 ${VICON_ROS_DISTRO} binaries require Ubuntu 24.04 (noble)." \
+            "On other systems use the VS Code Dev Container (.devcontainer/)."
+    fi
+}
+
+# Return 0 if a Debian package is installed.
+is_apt_package_installed()
+{
+    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+}
+
+# Install the given apt packages that are not installed yet (uses sudo).
+ensure_apt_packages()
+{
+    local missing=()
+    local package=""
+    for package in "$@"; do
+        if ! is_apt_package_installed "${package}"; then
+            missing+=("${package}")
+        fi
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    info "Installing system packages (sudo): ${missing[*]}"
+    sudo apt-get update -q
+    sudo apt-get install -y -q "${missing[@]}"
+}
+
+# Print the tag of the latest ros2-apt-source release.
+# The tag is read from the redirect of the github.com "latest release" page
+# (.../releases/latest -> .../releases/tag/<tag>) rather than from the GitHub REST
+# API, which rejects unauthenticated clients with HTTP 403 once they exceed its rate
+# limit (common behind institute NAT/proxies).
+latest_ros_apt_source_tag()
+{
+    local latest_url="https://github.com/${ROS_APT_SOURCE_REPO}/releases/latest"
+    local redirect_url=""
+    if ! redirect_url="$(curl -fsS -o /dev/null -w '%{redirect_url}' "${latest_url}")"; then
+        return 1
+    fi
+
+    if [[ "${redirect_url}" != */releases/tag/* ]]; then
+        return 1
+    fi
+    printf '%s\n' "${redirect_url##*/}"
+}
+
+# Add the official ROS 2 apt repository, following the ROS 2 Jazzy installation guide.
+# The release of the ros2-apt-source package can be pinned with ROS_APT_SOURCE_VERSION.
+add_ros_apt_repository()
+{
+    if is_apt_package_installed "ros2-apt-source"; then
+        info "ROS 2 apt repository already configured."
+        return 0
+    fi
+
+    ensure_apt_packages locales software-properties-common curl ca-certificates
+
+    info "Configuring the en_US.UTF-8 locale (sudo)"
+    sudo locale-gen en_US en_US.UTF-8
+    sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+
+    info "Enabling the Ubuntu 'universe' repository (sudo)"
+    sudo add-apt-repository -y universe
+
+    # Determine which release of ros2-apt-source to install
+    local release_tag="${ROS_APT_SOURCE_VERSION:-}"
+    if [[ -z "${release_tag}" ]]; then
+        if ! release_tag="$(latest_ros_apt_source_tag)"; then
+            die "Could not determine the latest ros2-apt-source release from github.com." \
+                "Check the network/proxy, or pin a release and retry, e.g.:" \
+                "  ROS_APT_SOURCE_VERSION=1.3.0 scripts/build.sh" \
+                "Releases: https://github.com/${ROS_APT_SOURCE_REPO}/releases"
+        fi
+    fi
+
+    # The ros2-apt-source package installs the repository key and source list
+    local deb_name="ros2-apt-source_${release_tag}.noble_all.deb"
+    local deb_url="https://github.com/${ROS_APT_SOURCE_REPO}/releases/download/${release_tag}/${deb_name}"
+    local download_dir=""
+    download_dir="$(mktemp -d)"
+    # Also removed when a step below stops the script (set -e); expanded now, as it is local
+    # shellcheck disable=SC2064
+    trap "rm -rf '${download_dir}'" EXIT
+    local deb_file="${download_dir}/${deb_name}"
+
+    info "Downloading ${deb_name}"
+    if ! curl -fsSL -o "${deb_file}" "${deb_url}"; then
+        die "Download failed: ${deb_url}" \
+            "Check the network/proxy, or pin another release with ROS_APT_SOURCE_VERSION."
+    fi
+
+    info "Installing ros2-apt-source ${release_tag} (sudo)"
+    sudo dpkg -i "${deb_file}"
+    rm -rf "${download_dir}"
+    trap - EXIT
+}
+
+# Install ROS 2 (base variant + development tools) if it is not installed.
+install_ros_if_missing()
+{
+    if [[ -f "${VICON_ROS_SETUP_FILE}" ]]; then
+        info "ROS 2 ${VICON_ROS_DISTRO} found (${VICON_ROS_SETUP_FILE})."
+    else
+        info "ROS 2 ${VICON_ROS_DISTRO} not found: installing it from the official apt repository."
+        add_ros_apt_repository
+        ensure_apt_packages "ros-${VICON_ROS_DISTRO}-ros-base"
+    fi
+
+    # rosdep and colcon; a machine can have ROS 2 without them
+    ensure_apt_packages "ros-dev-tools"
+}
+
+# Initialise rosdep once, refresh its database and install the package dependencies.
+install_rosdep_dependencies()
+{
+    if [[ ! -f "${ROSDEP_SOURCES_FILE}" ]]; then
+        info "Initialising rosdep (sudo)"
+        sudo rosdep init
+    fi
+
+    info "Updating the rosdep database"
+    if ! rosdep update --rosdistro "${VICON_ROS_DISTRO}"; then
+        warn "rosdep update failed (no network?): using the rosdep database of this machine."
+    fi
+
+    info "Installing package dependencies with rosdep"
+    rosdep install \
+        --from-paths "${PACKAGE_DIRS[@]}" \
+        --rosdistro "${VICON_ROS_DISTRO}" \
+        --ignore-src \
+        -y
+}
+
+# -----------------------------------------------------------------------------
+# Build
+# -----------------------------------------------------------------------------
+
+# Make sure every package of PACKAGE_DIRS (common.sh) is present (e.g. not lost in a partial
+# checkout).
+check_package_dirs()
+{
+    local package_dir=""
+    for package_dir in "${PACKAGE_DIRS[@]}"; do
+        if [[ ! -f "${REPO_ROOT}/${package_dir}/package.xml" ]]; then
+            die "Package not found: ${REPO_ROOT}/${package_dir}/package.xml"
+        fi
+    done
+}
+
+# Create the conda environment of the Python tools, or update it when environment.yml changed.
+# Optional: the node does not need it, so without conda this only warns.
+setup_tools_env()
+{
+    local conda_bin=""
+    conda_bin="$(conda_command)"
+    if [[ -z "${conda_bin}" ]]; then
+        warn "conda not found: the viewer, the mount estimate and the HDF5 export need the" \
+            "environment of ${TOOLS_ENVIRONMENT_FILE##*/}. Install conda, then run this script again."
+        return 0
+    fi
+
+    local prefix=""
+    prefix="$(tools_env_prefix)"
+    if [[ -z "${prefix}" ]]; then
+        info "Creating the conda environment '$(tools_env_name)' (${TOOLS_ENVIRONMENT_FILE##*/})"
+        "${conda_bin}" env create --yes --file "${TOOLS_ENVIRONMENT_FILE}"
+    elif [[ "${TOOLS_ENVIRONMENT_FILE}" -nt "${prefix}/conda-meta/history" ]]; then
+        info "Updating the conda environment '$(tools_env_name)' (${TOOLS_ENVIRONMENT_FILE##*/} changed)"
+        "${conda_bin}" env update --file "${TOOLS_ENVIRONMENT_FILE}" --prune
+        touch "${prefix}/conda-meta/history"
+    fi
+}
+
+clean_workspace()
+{
+    info "Removing build/, install/ and log/"
+    rm -rf "${REPO_ROOT}/build" "${REPO_ROOT}/install" "${REPO_ROOT}/log"
+}
+
+main()
+{
+    parse_args "$@"
+
+    # rosdep works on paths relative to the workspace root
+    cd "${REPO_ROOT}"
+
+    check_os
+    install_ros_if_missing
+    require_ros
+
+    check_package_dirs
+    install_rosdep_dependencies
+
+    if [[ "${clean_first}" == true ]]; then
+        clean_workspace
+    fi
+
+    require_colcon
+    # The C++ tests are not compiled here: tests/run_tests.sh builds with BUILD_TESTING=ON
+    colcon_build_workspace "${build_type}" OFF
+    setup_tools_env
+
+    info "Build complete."
+    info "Next: scripts/launch.sh [-c config/vicon_client.yaml]; viewer: scripts/start_visualizer.sh"
+}
+
+main "$@"
