@@ -76,7 +76,15 @@ def Record_session(ros_env: dict[str, str], tmp_path: Path, stop_signal: signal.
     try:
         time.sleep(1.5)
         recorder_ = subprocess.Popen(
-            [str(SCRIPTS_DIR / "record.sh"), "-c", str(CONFIG_FILE), "-t", "test", "-o", str(tmp_path)],
+            [
+                str(SCRIPTS_DIR / "record.sh"),
+                "-c",
+                str(CONFIG_FILE),
+                "-t",
+                "test",
+                "-o",
+                str(tmp_path),
+            ],
             env=environment_,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -131,7 +139,9 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
 
     # export.sh runs in the conda environment of environment.yml (h5py, rosbag2 through ROS)
     if not Tools_env_python():
-        pytest.skip("conda environment of environment.yml missing (scripts/build.sh): export untested")
+        pytest.skip(
+            "conda environment of environment.yml missing (scripts/build.sh): export untested"
+        )
 
     export_ = subprocess.run(
         [str(SCRIPTS_DIR / "export.sh"), str(session_), "--format", "csv,hdf5"],
@@ -230,7 +240,13 @@ def test_record_refuses_an_empty_namespace(
     """With an empty namespace the topic filter would match nothing but TF."""
     output_dir_ = tmp_path / "sessions"
     result_ = subprocess.run(
-        [str(SCRIPTS_DIR / "record.sh"), "-c", str(make_config(overrides={"namespace": ""})), "-o", str(output_dir_)],
+        [
+            str(SCRIPTS_DIR / "record.sh"),
+            "-c",
+            str(make_config(overrides={"namespace": ""})),
+            "-o",
+            str(output_dir_),
+        ],
         env=ros_env,
         capture_output=True,
         text=True,
@@ -245,7 +261,11 @@ def test_record_refuses_an_empty_namespace(
 def test_export_requires_a_format(tmp_path: Path, ros_env: dict[str, str]) -> None:
     """No implicit export: --format is required."""
     result_ = subprocess.run(
-        [str(SCRIPTS_DIR / "export.sh"), str(tmp_path)], env=ros_env, capture_output=True, text=True, check=False
+        [str(SCRIPTS_DIR / "export.sh"), str(tmp_path)],
+        env=ros_env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result_.returncode == 1
     assert "--format are required" in result_.stderr

@@ -93,7 +93,7 @@ def test_profile_file_points_to_repository_config(shell: ShellRunner) -> None:
 # Configuration
 # -------------------------------------------------------------------------------------------------
 PRINT_PROFILES: str = (
-    'vicon_configure_dds; '
+    "vicon_configure_dds; "
     'echo "FASTRTPS=${FASTRTPS_DEFAULT_PROFILES_FILE:-unset}"; '
     'echo "FASTDDS=${FASTDDS_DEFAULT_PROFILES_FILE:-unset}"'
 )

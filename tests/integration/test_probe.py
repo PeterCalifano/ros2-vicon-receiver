@@ -77,7 +77,16 @@ def test_probe_rejects_unwritable_output(ros_env: dict[str, str], tmp_path: Path
     """An output file that cannot be created is reported before connecting."""
     output_ = tmp_path / "missing_dir" / "recording.json"
     result_ = Run_probe(
-        ["--host", "127.0.0.1", "--frames", "1", "--stream-mode", "ServerPush", "--json", str(output_)],
+        [
+            "--host",
+            "127.0.0.1",
+            "--frames",
+            "1",
+            "--stream-mode",
+            "ServerPush",
+            "--json",
+            str(output_),
+        ],
         ros_env,
     )
     assert result_.returncode == EXIT_OUTPUT_ERROR
@@ -109,7 +118,9 @@ def test_probe_non_vicon_server_fails_with_sdk_result(
         ros_env,
     )
     assert result_.returncode == EXIT_CONNECTION_FAILED
-    assert f"Connection to {tcp_listener.host_spec} failed: ClientConnectionFailed" in result_.stdout
+    assert (
+        f"Connection to {tcp_listener.host_spec} failed: ClientConnectionFailed" in result_.stdout
+    )
 
     # The recording documents the failed attempt and is still valid JSON
     recording_ = Load_recording(output_)
@@ -162,8 +173,18 @@ def test_probe_sh_stream_mode_option(
     output_ = tmp_path / "recording.json"
     result_ = shell.run_script(
         "probe.sh",
-        ["--host", tcp_listener.host_spec, "--stream-mode", "ClientPullPreFetch", "-n", "1",
-         "--timeout-ms", "300", "-o", str(output_)],
+        [
+            "--host",
+            tcp_listener.host_spec,
+            "--stream-mode",
+            "ClientPullPreFetch",
+            "-n",
+            "1",
+            "--timeout-ms",
+            "300",
+            "-o",
+            str(output_),
+        ],
     )
     assert result_.returncode == EXIT_CONNECTION_FAILED
     assert "(ClientPullPreFetch)" in result_.stdout
@@ -205,7 +226,16 @@ def test_probe_records_live_frames(shell: ShellRunner, tmp_path: Path, stream_mo
     output_ = tmp_path / "live.json"
     result_ = shell.run_script(
         "probe.sh",
-        ["--host", live_host_, "--stream-mode", stream_mode, "-n", str(frame_count_), "-o", str(output_)],
+        [
+            "--host",
+            live_host_,
+            "--stream-mode",
+            stream_mode,
+            "-n",
+            str(frame_count_),
+            "-o",
+            str(output_),
+        ],
     )
     assert result_.returncode == 0, result_.stdout + result_.stderr
 

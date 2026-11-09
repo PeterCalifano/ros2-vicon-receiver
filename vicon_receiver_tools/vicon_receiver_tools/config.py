@@ -73,9 +73,7 @@ def Load_node_parameters(config_file: Path, node_name: str = DEFAULT_NODE_NAME) 
     return parameters_
 
 
-def Read_parameter(
-    config_file: Path, param_name: str, node_name: str = DEFAULT_NODE_NAME
-) -> Any:
+def Read_parameter(config_file: Path, param_name: str, node_name: str = DEFAULT_NODE_NAME) -> Any:
     """Return the value of one parameter from a ROS 2 parameters file.
 
     Args:

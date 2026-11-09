@@ -100,7 +100,9 @@ def Link_pose(urdf: yourdfpy.URDF, link: str, reference: str) -> np.ndarray:
     try:
         return np.linalg.inv(np.asarray(urdf.get_transform(frame_to=reference, frame_from=link)))
     except ValueError as error_:
-        raise RobotModelError(f"no transform between '{link}' and '{reference}': {error_}") from error_
+        raise RobotModelError(
+            f"no transform between '{link}' and '{reference}': {error_}"
+        ) from error_
 
 
 def Rigid_subtree(urdf: yourdfpy.URDF, link: str) -> list[str]:
@@ -145,7 +147,9 @@ def Rigid_mesh(urdf: yourdfpy.URDF, link: str, model_dir: Path) -> trimesh.Trime
     return trimesh.util.concatenate(meshes_)
 
 
-def Link_mesh(urdf: yourdfpy.URDF, mesh_link: str, frame_link: str, model_dir: Path) -> trimesh.Trimesh:
+def Link_mesh(
+    urdf: yourdfpy.URDF, mesh_link: str, frame_link: str, model_dir: Path
+) -> trimesh.Trimesh:
     """Visual meshes of one link only, expressed in the frame of another link.
 
     Raises:
@@ -160,7 +164,9 @@ def Link_mesh(urdf: yourdfpy.URDF, mesh_link: str, frame_link: str, model_dir: P
     for visual_ in links_by_name_[mesh_link].visuals:
         if visual_.geometry.mesh is None:
             continue
-        mesh_ = trimesh.load(Resolve_mesh_path(visual_.geometry.mesh.filename, model_dir), force="mesh")
+        mesh_ = trimesh.load(
+            Resolve_mesh_path(visual_.geometry.mesh.filename, model_dir), force="mesh"
+        )
         visual_origin_ = np.eye(4) if visual_.origin is None else visual_.origin
         mesh_.apply_transform(link_pose_ @ visual_origin_)
         meshes_.append(mesh_)

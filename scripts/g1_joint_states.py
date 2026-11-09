@@ -107,8 +107,14 @@ def Load_config(path: Path) -> G1JointStatesConfig:
         if not isinstance(section_.get(key_), str) or not section_[key_].strip():
             raise ConfigError(f"{CONFIG_SECTION}.{key_} must be a non-empty string")
     names_ = section_.get("motor_joint_names")
-    if not isinstance(names_, list) or not names_ or not all(isinstance(name_, str) and name_ for name_ in names_):
-        raise ConfigError(f"{CONFIG_SECTION}.motor_joint_names must be a non-empty list of joint names")
+    if (
+        not isinstance(names_, list)
+        or not names_
+        or not all(isinstance(name_, str) and name_ for name_ in names_)
+    ):
+        raise ConfigError(
+            f"{CONFIG_SECTION}.motor_joint_names must be a non-empty list of joint names"
+        )
     if len(set(names_)) != len(names_):
         raise ConfigError(f"{CONFIG_SECTION}.motor_joint_names lists a joint twice")
     return G1JointStatesConfig(
@@ -156,7 +162,9 @@ def Main(argv: list[str]) -> int:
     try:
         from unitree_hg.msg import LowState
     except ImportError:
-        return Fail("unitree_hg messages not found: source the overlay of the workspace that provides them.")
+        return Fail(
+            "unitree_hg messages not found: source the overlay of the workspace that provides them."
+        )
 
     rclpy.init()
     node_ = rclpy.create_node("g1_joint_states")

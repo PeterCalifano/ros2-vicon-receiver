@@ -17,14 +17,18 @@ from conftest import DEFAULT_TIMEOUT_S, REPO_ROOT, SCRIPTS_DIR
 pytestmark = pytest.mark.integration
 
 
-def test_invalid_topic_is_reported_without_a_traceback(ros_env: dict[str, str], tmp_path: Path) -> None:
+def test_invalid_topic_is_reported_without_a_traceback(
+    ros_env: dict[str, str], tmp_path: Path
+) -> None:
     """A topic name that ROS rejects ends in an error message and exit status 1."""
     package_ = tmp_path / "unitree_hg" / "msg"
     package_.mkdir(parents=True)
     (tmp_path / "unitree_hg" / "__init__.py").write_text("", encoding="utf-8")
     (package_ / "__init__.py").write_text("class LowState:\n    pass\n", encoding="utf-8")
 
-    document_ = yaml.safe_load((REPO_ROOT / "config" / "g1_joint_states.yaml").read_text(encoding="utf-8"))
+    document_ = yaml.safe_load(
+        (REPO_ROOT / "config" / "g1_joint_states.yaml").read_text(encoding="utf-8")
+    )
     document_["g1_joint_states"]["joint_states_topic"] = "not a valid topic"
     config_ = tmp_path / "g1_joint_states.yaml"
     config_.write_text(yaml.safe_dump(document_), encoding="utf-8")

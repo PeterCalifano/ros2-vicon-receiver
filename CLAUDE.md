@@ -73,7 +73,7 @@ On this laptop the WSL clocksource is `tsc` and it runs **~4.2 % fast** (NTP che
 
 - C++: `.clang-format` at the root (from gtsam_spaceNav: LLVM, Allman, 4 spaces, 100 cols, namespace bodies indented, no bin-packing). Doxygen file headers (`@file/@author/@brief/@version/@date`) and doc comments; one statement per line.
 - Bash: `set -Eeuo pipefail`, small commented functions, errors via `die` to stderr; source `scripts/lib/common.sh`. The file header says what the script does and ends with `Options: <script> --help`; `usage()` is the only description of the command line, with the layout pinned by `tests/unit/test_scripts_cli.py`: synopsis listing every option (`Usage: ${SCRIPT_NAME} [-c FILE] ... [-h]`), description, `Arguments:`, `Options:` (value, default, allowed values), `Environment:`, `Exit status:` where it matters, `Examples:` (paths from the repo root), lines <= 80 columns. Options with a value use `require_option_value`; unknown options `die_with_usage` (usage on stderr, exit 1).
-- Python (gtsam_spaceNav conventions): type hints, docstrings, dataclasses over dicts, top-level functions capitalised (`Read_parameter`), methods lowercase, local variables suffixed `_`. Modules expose a `Main(argv) -> int` CLI for `python3 -m`.
+- Python (gtsam_spaceNav conventions; `ruff format` and `ruff check`, configured in `pyproject.toml`, naming rules off): type hints, docstrings, dataclasses over dicts, top-level functions capitalised (`Read_parameter`), methods lowercase, local variables suffixed `_`. Modules expose a `Main(argv) -> int` CLI for `python3 -m`.
 - Commits: only after the user reviews the batch; gtsam_spaceNav style (imperative subject, `[MAJOR]`/`[BUGFIX]` prefixes, `- ` bullet bodies).
 
 ## Architecture

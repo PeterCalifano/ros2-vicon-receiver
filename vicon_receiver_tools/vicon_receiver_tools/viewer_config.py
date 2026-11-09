@@ -128,7 +128,9 @@ class LinkPoseInBodyFrame:
         return transform_
 
 
-IDENTITY_MOUNT: LinkPoseInBodyFrame = LinkPoseInBodyFrame(xyz_m=(0.0, 0.0, 0.0), rpy_rad=(0.0, 0.0, 0.0))
+IDENTITY_MOUNT: LinkPoseInBodyFrame = LinkPoseInBodyFrame(
+    xyz_m=(0.0, 0.0, 0.0), rpy_rad=(0.0, 0.0, 0.0)
+)
 
 
 def _Require(section: dict[str, Any], key: str, kind: type, where: str) -> Any:
@@ -183,7 +185,9 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
             _Require(viewer_section_, "grid_size_m", float, "viewer"), "viewer.grid_size_m"
         ),
         trail_length=int(
-            _Require_positive(_Require(viewer_section_, "trail_length", int, "viewer"), "viewer.trail_length")
+            _Require_positive(
+                _Require(viewer_section_, "trail_length", int, "viewer"), "viewer.trail_length"
+            )
         ),
         trail_update_rate_hz=_Require_positive(
             _Require(viewer_section_, "trail_update_rate_hz", float, "viewer"),
@@ -194,7 +198,8 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
         ),
         good_camera_count=int(
             _Require_positive(
-                _Require(viewer_section_, "good_camera_count", int, "viewer"), "viewer.good_camera_count"
+                _Require(viewer_section_, "good_camera_count", int, "viewer"),
+                "viewer.good_camera_count",
             )
         ),
     )
@@ -217,10 +222,22 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
             PinholeCameraSettings(
                 name=_Require(camera_section_, "name", str, where_),
                 frame=_Require(camera_section_, "frame", str, where_),
-                width=int(_Require_positive(_Require(camera_section_, "width", int, where_), f"{where_}.width")),
-                height=int(_Require_positive(_Require(camera_section_, "height", int, where_), f"{where_}.height")),
-                fx=_Require_positive(_Require(camera_section_, "fx", float, where_), f"{where_}.fx"),
-                fy=_Require_positive(_Require(camera_section_, "fy", float, where_), f"{where_}.fy"),
+                width=int(
+                    _Require_positive(
+                        _Require(camera_section_, "width", int, where_), f"{where_}.width"
+                    )
+                ),
+                height=int(
+                    _Require_positive(
+                        _Require(camera_section_, "height", int, where_), f"{where_}.height"
+                    )
+                ),
+                fx=_Require_positive(
+                    _Require(camera_section_, "fx", float, where_), f"{where_}.fx"
+                ),
+                fy=_Require_positive(
+                    _Require(camera_section_, "fy", float, where_), f"{where_}.fy"
+                ),
                 cx=_Require(camera_section_, "cx", float, where_),
                 cy=_Require(camera_section_, "cy", float, where_),
             )
@@ -231,10 +248,13 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
     if surface_offset_m_ < 0.0:
         raise ConfigError(f"mount_estimate.surface_offset_m must be >= 0, got {surface_offset_m_}")
     pairs_: list[LeftRightMarkerPairSettings] = []
-    for index_, pair_section_ in enumerate(_Require(estimate_section_, "lateral_marker_pairs", list, "mount_estimate")):
+    for index_, pair_section_ in enumerate(
+        _Require(estimate_section_, "lateral_marker_pairs", list, "mount_estimate")
+    ):
         where_ = f"mount_estimate.lateral_marker_pairs[{index_}]"
         pair_ = LeftRightMarkerPairSettings(
-            left=_Require(pair_section_, "left", str, where_), right=_Require(pair_section_, "right", str, where_)
+            left=_Require(pair_section_, "left", str, where_),
+            right=_Require(pair_section_, "right", str, where_),
         )
         if pair_.left == pair_.right:
             raise ConfigError(f"{where_}: left and right are the same marker '{pair_.left}'")
@@ -244,9 +264,13 @@ def Load_viewer_config(path: Path) -> ViewerConfig:
     marker_links_ = _Require(estimate_section_, "marker_links", dict, "mount_estimate")
     for marker_, link_ in marker_links_.items():
         if not isinstance(marker_, str) or not isinstance(link_, str):
-            raise ConfigError(f"mount_estimate.marker_links: '{marker_}: {link_}' must map a marker name to a link name")
+            raise ConfigError(
+                f"mount_estimate.marker_links: '{marker_}: {link_}' must map a marker name to a link name"
+            )
     mount_estimate_ = MountEstimateSettings(
-        surface_offset_m=surface_offset_m_, lateral_marker_pairs=pairs_, marker_links=dict(marker_links_)
+        surface_offset_m=surface_offset_m_,
+        lateral_marker_pairs=pairs_,
+        marker_links=dict(marker_links_),
     )
 
     return ViewerConfig(

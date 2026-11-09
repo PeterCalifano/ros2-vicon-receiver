@@ -130,7 +130,9 @@ def Viewer_segment_from_message(segment: Any) -> ViewerSegment:
     wxyz_ = np.array(
         [segment.orientation.w, segment.orientation.x, segment.orientation.y, segment.orientation.z]
     )
-    occluded_ = bool(segment.translation_occluded or segment.rotation_occluded) or not Is_unit_quaternion(wxyz_)
+    occluded_ = bool(
+        segment.translation_occluded or segment.rotation_occluded
+    ) or not Is_unit_quaternion(wxyz_)
     return ViewerSegment(
         name=segment.name,
         position=np.array([segment.position.x, segment.position.y, segment.position.z]),
@@ -202,7 +204,9 @@ def Camera_position(robot_position: np.ndarray, heading_rad: float) -> np.ndarra
     """Where a browser camera looks at the robot from: CAMERA_OFFSET_M turned by the robot heading."""
     cos_, sin_ = np.cos(heading_rad), np.sin(heading_rad)
     offset_x_, offset_y_, offset_z_ = CAMERA_OFFSET_M
-    offset_ = np.array([cos_ * offset_x_ - sin_ * offset_y_, sin_ * offset_x_ + cos_ * offset_y_, offset_z_])
+    offset_ = np.array(
+        [cos_ * offset_x_ - sin_ * offset_y_, sin_ * offset_x_ + cos_ * offset_y_, offset_z_]
+    )
     return np.asarray(robot_position, dtype=float) + offset_
 
 
@@ -241,7 +245,10 @@ def Joint_configuration(joint_names: tuple[str, ...], positions: dict[str, float
 
 
 def Joint_states_markdown(
-    joint_names: tuple[str, ...], positions: dict[str, float], age_s: float | None, topic: str | None
+    joint_names: tuple[str, ...],
+    positions: dict[str, float],
+    age_s: float | None,
+    topic: str | None,
 ) -> str:
     """Telemetry line about the joint angles used for the robot model."""
     if topic is None:
@@ -292,7 +299,9 @@ class LatestFrameBuffer:
                 message_ = self._pending
                 if self._pending_is_serialized:
                     if self.deserialize is None:
-                        raise ValueError("LatestFrameBuffer: serialized message without deserialize")
+                        raise ValueError(
+                            "LatestFrameBuffer: serialized message without deserialize"
+                        )
                     message_ = self.deserialize(message_)
                 self._pending = None
                 self._latest_view = Viewer_frame_from_message(message_)
@@ -372,7 +381,9 @@ class LatestJointStates:
                 message_ = self._pending
                 if self._pending_is_serialized:
                     if self.deserialize is None:
-                        raise ValueError("LatestJointStates: serialized message without deserialize")
+                        raise ValueError(
+                            "LatestJointStates: serialized message without deserialize"
+                        )
                     message_ = self.deserialize(message_)
                 self._pending = None
                 # JointState allows an empty position array (velocities or efforts only)
@@ -415,12 +426,16 @@ class ViserLiveViewer:
         self._last_trail_s = 0.0
 
         grid_size_ = config.viewer.grid_size_m
-        server.scene.add_grid("/grid", width=grid_size_, height=grid_size_, cell_size=0.5, section_size=1.0)
+        server.scene.add_grid(
+            "/grid", width=grid_size_, height=grid_size_, cell_size=0.5, section_size=1.0
+        )
         server.scene.add_frame("/vicon", axes_length=0.3, axes_radius=0.01)
 
         mount_path_ = repo_root / config.robot.mount_file
         loaded_mount_ = Load_mount(mount_path_)
-        self._mount: LinkPoseInBodyFrame = loaded_mount_ if loaded_mount_ is not None else IDENTITY_MOUNT
+        self._mount: LinkPoseInBodyFrame = (
+            loaded_mount_ if loaded_mount_ is not None else IDENTITY_MOUNT
+        )
         self._mount_note = (
             f"mount from {config.robot.mount_file}"
             if loaded_mount_ is not None
@@ -497,7 +512,9 @@ class ViserLiveViewer:
         self._telemetry = gui_.add_markdown("Waiting for ViconFrame ...")
         gui_.add_markdown(f"_{self._robot_note}_  \n_{self._mount_note}_")
 
-        with gui_.add_folder(f"Mount: {self._config.robot.mount_link} in Vicon body", expand_by_default=False):
+        with gui_.add_folder(
+            f"Mount: {self._config.robot.mount_link} in Vicon body", expand_by_default=False
+        ):
             xyz_ = self._mount.xyz_m
             rpy_deg_ = np.degrees(self._mount.rpy_rad)
             self._sliders = {
@@ -548,14 +565,18 @@ class ViserLiveViewer:
                 key_ = Segment_key(subject_.ros_name, segment_.name)
                 handle_ = self._segment_handles.get(key_)
                 if handle_ is None:
-                    handle_ = scene_.add_frame(f"/subjects/{key_}", axes_length=0.15, axes_radius=0.006)
+                    handle_ = scene_.add_frame(
+                        f"/subjects/{key_}", axes_length=0.15, axes_radius=0.006
+                    )
                     self._segment_handles[key_] = handle_
                 handle_.visible = not segment_.occluded
                 if not segment_.occluded:
                     handle_.position = segment_.position
                     handle_.wxyz = segment_.wxyz
 
-                segments_ = Trail_segments(buffer.trail(key_)) if redraw_trails_ else np.zeros((0, 2, 3))
+                segments_ = (
+                    Trail_segments(buffer.trail(key_)) if redraw_trails_ else np.zeros((0, 2, 3))
+                )
                 if len(segments_) > 0:
                     self._trail_handles[key_] = scene_.add_line_segments(
                         f"/trails/{key_}", points=segments_, colors=COLOR_TRAIL, thickness=0.004
@@ -585,7 +606,8 @@ class ViserLiveViewer:
             if ros_name_ not in subjects_:
                 handle_.visible = False
         robot_present_ = any(
-            subject_.name == self._config.robot.subject and subject_.segments for subject_ in frame.subjects
+            subject_.name == self._config.robot.subject and subject_.segments
+            for subject_ in frame.subjects
         )
         if not robot_present_ and self._robot_frame is not None:
             self._set_robot_visible(False)
@@ -600,7 +622,9 @@ class ViserLiveViewer:
         """Refresh the telemetry panel (at most every TELEMETRY_PERIOD_S), also without new frames."""
         now_ = time.monotonic()
         if now_ - self._last_telemetry_s >= TELEMETRY_PERIOD_S:
-            self._telemetry.content = Telemetry_markdown(frame, buffer.rate_hz()) + "\n\n" + self._joints_line
+            self._telemetry.content = (
+                Telemetry_markdown(frame, buffer.rate_hz()) + "\n\n" + self._joints_line
+            )
             self._last_telemetry_s = now_
 
     def update_joints(self, joint_states: LatestJointStates) -> None:
@@ -609,7 +633,10 @@ class ViserLiveViewer:
             return
         positions_ = joint_states.positions()
         self._joints_line = Joint_states_markdown(
-            self._joint_names, positions_, joint_states.age_s(), self._config.robot.joint_states_topic
+            self._joint_names,
+            positions_,
+            joint_states.age_s(),
+            self._config.robot.joint_states_topic,
         )
         configuration_ = Joint_configuration(self._joint_names, positions_)
         if np.array_equal(configuration_, self._configuration):
@@ -628,7 +655,9 @@ class ViserLiveViewer:
         self._configuration = configuration.copy()
         self._root_in_mount = Link_pose(self._urdf, self._urdf.base_link, robot_.mount_link)
         for camera_ in self._config.cameras:
-            self._cameras_in_mount[camera_.name] = Link_pose(self._urdf, camera_.frame, robot_.mount_link)
+            self._cameras_in_mount[camera_.name] = Link_pose(
+                self._urdf, camera_.frame, robot_.mount_link
+            )
 
     def _update_markers(self, subject: ViewerSubject) -> None:
         """Markers of one subject as a point cloud; occluded ones have no position and are left out."""
@@ -684,7 +713,9 @@ class ViserLiveViewer:
         self._robot_position = np.asarray(position_, dtype=float)
         self._robot_heading_rad = float(np.arctan2(mount_in_world_[1, 0], mount_in_world_[0, 0]))
         for name_, handle_ in self._camera_handles.items():
-            wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._cameras_in_mount[name_])
+            wxyz_, position_ = Matrix_to_wxyz_position(
+                mount_in_world_ @ self._cameras_in_mount[name_]
+            )
             handle_.wxyz = wxyz_
             handle_.position = position_
 
@@ -699,7 +730,9 @@ def Main(argv: list[str] | None = None) -> int:
         description="Live viewer of the ViconFrame topic in a web browser (viser).",
     )
     parser_.add_argument("--config", type=Path, required=True, help="config/viewer.yaml")
-    parser_.add_argument("--repo-root", type=Path, default=Path.cwd(), help="base of relative paths")
+    parser_.add_argument(
+        "--repo-root", type=Path, default=Path.cwd(), help="base of relative paths"
+    )
     arguments_ = parser_.parse_args(argv)
 
     from vicon_receiver_tools.config import ConfigError
@@ -736,6 +769,7 @@ def Main(argv: list[str] | None = None) -> int:
         node_.create_subscription(
             JointState, config_.robot.joint_states_topic, joint_states_.put_serialized, 10, raw=True
         )
+
     def _Spin() -> None:
         # Ctrl+C shuts rclpy down from the main thread: end the spin quietly
         try:
@@ -760,7 +794,9 @@ def Main(argv: list[str] | None = None) -> int:
             if frame_ is not None and frame_ is not last_frame_:
                 if last_frame_ is None:
                     subjects_ = ", ".join(subject_.name for subject_ in frame_.subjects) or "none"
-                    print(f"[viewer] receiving frames (frame {frame_.frame_number}, subjects: {subjects_})")
+                    print(
+                        f"[viewer] receiving frames (frame {frame_.frame_number}, subjects: {subjects_})"
+                    )
                 viewer_.update(frame_, buffer_)
                 last_frame_ = frame_
             elif frame_ is not None:

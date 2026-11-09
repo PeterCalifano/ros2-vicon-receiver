@@ -23,6 +23,7 @@ dependencies:
   - pytest
   - clang-format=18.1.8
   - shellcheck
+  - ruff=0.17
   - pip
   - pip:
       # Live viewer and mount estimate. Pinned: the viewer uses the viser 1.1 scene/GUI API.

@@ -165,7 +165,9 @@ def test_read_config_value_ignores_warnings_on_stderr(shell: ShellRunner) -> Non
 
 def test_read_config_value_reports_the_error_message(shell: ShellRunner) -> None:
     """On failure the message of the config module is in the error."""
-    snippet_ = 'run_tools_module() { echo "key not found" >&2; return 1; }; read_config_param "any.yaml" x'
+    snippet_ = (
+        'run_tools_module() { echo "key not found" >&2; return 1; }; read_config_param "any.yaml" x'
+    )
     result_ = shell.run_common(f'value=""; value="$({snippet_})"')
     assert result_.returncode == 1
     assert "Invalid config file: key not found" in result_.stderr
@@ -173,7 +175,10 @@ def test_read_config_value_reports_the_error_message(shell: ShellRunner) -> None
 
 @pytest.mark.parametrize(
     ("path", "expected"),
-    [("config/g1_mount.yaml", str(REPO_ROOT / "config" / "g1_mount.yaml")), ("/data/mount.yaml", "/data/mount.yaml")],
+    [
+        ("config/g1_mount.yaml", str(REPO_ROOT / "config" / "g1_mount.yaml")),
+        ("/data/mount.yaml", "/data/mount.yaml"),
+    ],
 )
 def test_absolute_repo_path(shell: ShellRunner, path: str, expected: str) -> None:
     """Paths in config files are relative to the repository root, or absolute."""
@@ -194,9 +199,7 @@ def test_read_config_key_path_missing_key(shell: ShellRunner, tmp_path: Path) ->
     """A missing key stops with the error of the config module."""
     config_ = tmp_path / "viewer.yaml"
     config_.write_text("robot:\n  source: 'host:/models/g1'\n", encoding="utf-8")
-    result_ = shell.run_common(
-        f'value=""; value="$(read_config_key_path "{config_}" robot.urdf)"'
-    )
+    result_ = shell.run_common(f'value=""; value="$(read_config_key_path "{config_}" robot.urdf)"')
     assert result_.returncode == 1
     assert "Invalid config file:" in result_.stderr
 
@@ -321,9 +324,7 @@ def test_check_vicon_reachable_succeeds_with_listener(
     shell: ShellRunner, tcp_listener: TcpListener
 ) -> None:
     """A server accepting TCP connections passes the check (real network stack)."""
-    result_ = shell.run_common(
-        f'check_vicon_reachable "{tcp_listener.host}" "{tcp_listener.port}"'
-    )
+    result_ = shell.run_common(f'check_vicon_reachable "{tcp_listener.host}" "{tcp_listener.port}"')
     assert result_.returncode == 0, result_.stderr
     assert f"reachable at {tcp_listener.host}:{tcp_listener.port}" in result_.stdout
 
@@ -428,7 +429,9 @@ def test_tools_env_name_comes_from_the_environment_file(shell: ShellRunner) -> N
 
 
 @pytest.mark.parametrize("active", [False, True])
-def test_tools_env_python_finds_the_environment(shell: ShellRunner, tmp_path: Path, active: bool) -> None:
+def test_tools_env_python_finds_the_environment(
+    shell: ShellRunner, tmp_path: Path, active: bool
+) -> None:
     """The interpreter is found with or without the environment activated ('*' in the listing)."""
     python_ = tmp_path / "bin" / "python"
     python_.parent.mkdir()
@@ -459,7 +462,9 @@ def test_tools_env_bin_finds_programs_of_the_environment(
     program_.touch(mode=0o755)
     environment_ = Fake_conda_env(Conda_listing(Tools_env_name(shell), tmp_path))
 
-    result_ = shell.run_common(f"tools_env_bin {program}", extra_env=environment_, use_fake_bin=True)
+    result_ = shell.run_common(
+        f"tools_env_bin {program}", extra_env=environment_, use_fake_bin=True
+    )
 
     assert result_.returncode == 0, result_.stderr
     assert result_.stdout.strip() == str(program_)

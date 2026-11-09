@@ -52,8 +52,15 @@ def Make_message(occluded: bool = False) -> SimpleNamespace:
         rotation_occluded=False,
     )
     markers_ = [
-        SimpleNamespace(name="m1", position=SimpleNamespace(x=1.1, y=2.0, z=3.0), occluded=False, camera_ids=[1, 2, 3, 4, 5]),
-        SimpleNamespace(name="m2", position=SimpleNamespace(x=0.0, y=0.0, z=0.0), occluded=True, camera_ids=[]),
+        SimpleNamespace(
+            name="m1",
+            position=SimpleNamespace(x=1.1, y=2.0, z=3.0),
+            occluded=False,
+            camera_ids=[1, 2, 3, 4, 5],
+        ),
+        SimpleNamespace(
+            name="m2", position=SimpleNamespace(x=0.0, y=0.0, z=0.0), occluded=True, camera_ids=[]
+        ),
     ]
     subject_ = SimpleNamespace(
         name="g1-unitree-torso-cam",
@@ -64,7 +71,11 @@ def Make_message(occluded: bool = False) -> SimpleNamespace:
         markers=markers_,
     )
     return SimpleNamespace(
-        frame_number=42, frames_dropped=0, latency_total_s=0.031, any_occluded=occluded, subjects=[subject_]
+        frame_number=42,
+        frames_dropped=0,
+        latency_total_s=0.031,
+        any_occluded=occluded,
+        subjects=[subject_],
     )
 
 
@@ -105,7 +116,9 @@ def test_camera_looks_at_the_robot_from_its_front_left() -> None:
     np.testing.assert_allclose(Camera_position(robot_, 0.0), robot_ + np.asarray(CAMERA_OFFSET_M))
     # Robot facing +y: its front-left is at -x, +y
     offset_ = Camera_position(robot_, np.pi / 2) - robot_
-    np.testing.assert_allclose(offset_, [-CAMERA_OFFSET_M[1], CAMERA_OFFSET_M[0], CAMERA_OFFSET_M[2]], atol=1e-12)
+    np.testing.assert_allclose(
+        offset_, [-CAMERA_OFFSET_M[1], CAMERA_OFFSET_M[0], CAMERA_OFFSET_M[2]], atol=1e-12
+    )
 
 
 def test_marker_colors_by_camera_count() -> None:
@@ -209,7 +222,9 @@ def test_viewer_config_missing_entry(tmp_path: Path) -> None:
 
 def test_viewer_config_rejects_non_positive_rate(tmp_path: Path) -> None:
     """Rates and sizes must be positive."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("update_rate_hz: 30.0", "update_rate_hz: 0.0")
+    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
+        "update_rate_hz: 30.0", "update_rate_hz: 0.0"
+    )
     config_ = tmp_path / "viewer.yaml"
     config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"viewer\.update_rate_hz must be > 0"):
@@ -218,7 +233,9 @@ def test_viewer_config_rejects_non_positive_rate(tmp_path: Path) -> None:
 
 def test_viewer_config_rejects_negative_surface_offset(tmp_path: Path) -> None:
     """Markers cannot sit below the surface of the meshes."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("surface_offset_m: 0.010", "surface_offset_m: -0.01")
+    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
+        "surface_offset_m: 0.010", "surface_offset_m: -0.01"
+    )
     config_ = tmp_path / "viewer.yaml"
     config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"surface_offset_m must be >= 0"):

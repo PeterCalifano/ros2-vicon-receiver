@@ -1,0 +1,16 @@
+# Python code checks of this repository: ruff check and ruff format (run by
+# tests/unit/test_static_checks.py). The packages themselves are built by colcon.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["vicon_receiver/third_party", "models", "probe_output", "recordings"]
+
+[tool.ruff.lint]
+# N (pep8-naming) is off: this repository uses Pascal_case functions and locals ending in _
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "C4", "PT", "PTH", "TID", "ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN"]

@@ -65,7 +65,10 @@ def test_resolve_mesh_path_matches_the_tail(tmp_path: Path) -> None:
     )
     assert resolved_ == str(tmp_path / "meshes" / "pelvis.obj")
     # Unknown files are returned unchanged (yourdfpy reports them)
-    assert Resolve_mesh_path(fname="package://x/missing.obj", model_dir=tmp_path) == "package://x/missing.obj"
+    assert (
+        Resolve_mesh_path(fname="package://x/missing.obj", model_dir=tmp_path)
+        == "package://x/missing.obj"
+    )
 
 
 def test_links_and_poses_of_a_urdf(tmp_path: Path) -> None:
@@ -109,7 +112,11 @@ def test_missing_urdf_is_reported(tmp_path: Path) -> None:
 def test_marker_constellation_in_body_frame() -> None:
     """Markers are expressed in the body frame; occluded samples and invalid rotations are skipped."""
     rotation_ = Rotation.from_euler("z", 90, degrees=True)
-    body_points_ = {"m1": np.array([0.1, 0.0, 0.0]), "m2": np.array([0.0, 0.2, 0.0]), "m3": np.array([0.0, 0.0, 0.3])}
+    body_points_ = {
+        "m1": np.array([0.1, 0.0, 0.0]),
+        "m2": np.array([0.0, 0.2, 0.0]),
+        "m3": np.array([0.0, 0.0, 0.3]),
+    }
     body_position_mm_ = np.array([1000.0, 2000.0, 500.0])
 
     def _Marker(name_: str, occluded_: bool) -> dict:
@@ -139,7 +146,9 @@ def test_marker_constellation_in_body_frame() -> None:
     zero_rotation_frame_ = {
         "subjects": [dict(frame_["subjects"][0], segments=[zero_segment_], markers=[far_marker_])]
     }
-    names_, points_ = Marker_constellation({"frames": [frame_, occluded_frame_, zero_rotation_frame_]}, "body")
+    names_, points_ = Marker_constellation(
+        {"frames": [frame_, occluded_frame_, zero_rotation_frame_]}, "body"
+    )
 
     assert names_ == ["m1", "m2", "m3"]
     for index_, name_ in enumerate(names_):
@@ -195,13 +204,18 @@ def Synthetic_surfaces() -> list[SampledMeshSurface]:
     mesh_, head_ = Synthetic_robot()
     robot_surface_ = SampledMeshSurface.From_mesh(mesh_)
     head_surface_ = SampledMeshSurface.From_mesh(head_)
-    return [head_surface_ if index_ in HEAD_MARKERS else robot_surface_ for index_ in range(len(LINK_MARKERS))]
+    return [
+        head_surface_ if index_ in HEAD_MARKERS else robot_surface_
+        for index_ in range(len(LINK_MARKERS))
+    ]
 
 
 def test_lateral_direction_from_left_right_pairs() -> None:
     """Each pair points from its right to its left marker; skewed pairs show as disagreement."""
     body_points_ = Body_points(0.0, np.zeros(3))
-    mean_deg_, directions_deg_, disagreement_deg_ = Lateral_direction_deg(body_points_, LATERAL_PAIRS)
+    mean_deg_, directions_deg_, disagreement_deg_ = Lateral_direction_deg(
+        body_points_, LATERAL_PAIRS
+    )
     # Link at heading 0: its left (y) axis is at +90 deg
     assert mean_deg_ == pytest.approx(90.0, abs=1e-9)
     assert directions_deg_ == pytest.approx([90.0, 90.0], abs=1e-9)

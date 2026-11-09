@@ -105,7 +105,9 @@ def test_unknown_option_is_rejected(shell: ShellRunner, script_path: str) -> Non
         ("g1_joint_states.py", "-c"),
     ],
 )
-def test_option_without_value_is_rejected(shell: ShellRunner, script_path: str, option: str) -> None:
+def test_option_without_value_is_rejected(
+    shell: ShellRunner, script_path: str, option: str
+) -> None:
     """An option given without its value is an error, not a silent fallback to a default."""
     result_ = shell.run_script(script_path, [option])
     assert result_.returncode == 1

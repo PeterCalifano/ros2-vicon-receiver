@@ -32,6 +32,7 @@ ADAPTER_CONFIG: Path = REPO_ROOT / "config" / "g1_joint_states.yaml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import g1_joint_states  # noqa: E402
 
+
 def Joint_state(names: list[str], positions: list[float]) -> SimpleNamespace:
     """Object with the fields of a sensor_msgs/JointState that the viewer reads."""
     return SimpleNamespace(name=names, position=positions)
@@ -94,7 +95,9 @@ def test_joint_states_markdown() -> None:
     """The telemetry line says where the angles come from."""
     names_ = ("a", "b")
     assert "no joint_states_topic" in Joint_states_markdown(names_, {}, None, None)
-    assert "nothing on /joint_states yet" in Joint_states_markdown(names_, {}, None, "/joint_states")
+    assert "nothing on /joint_states yet" in Joint_states_markdown(
+        names_, {}, None, "/joint_states"
+    )
     line_ = Joint_states_markdown(names_, {"a": 0.1}, 0.25, "/joint_states")
     assert "1/2 from /joint_states" in line_
     assert "0.2 s ago" in line_ or "0.3 s ago" in line_
@@ -110,15 +113,21 @@ def test_repository_viewer_config_reads_joint_states() -> None:
 
 def test_joint_states_topic_is_optional(tmp_path: Path) -> None:
     """Without the entry (or with null) the robot is drawn at zero angles."""
-    path_ = Write_viewer_config(tmp_path, lambda document_: document_["robot"].pop("joint_states_topic"))
+    path_ = Write_viewer_config(
+        tmp_path, lambda document_: document_["robot"].pop("joint_states_topic")
+    )
     assert Load_viewer_config(path_).robot.joint_states_topic is None
-    path_ = Write_viewer_config(tmp_path, lambda document_: document_["robot"].update(joint_states_topic=None))
+    path_ = Write_viewer_config(
+        tmp_path, lambda document_: document_["robot"].update(joint_states_topic=None)
+    )
     assert Load_viewer_config(path_).robot.joint_states_topic is None
 
 
 def test_empty_joint_states_topic_is_rejected(tmp_path: Path) -> None:
     """An empty topic is a mistake, not a way to disable it."""
-    path_ = Write_viewer_config(tmp_path, lambda document_: document_["robot"].update(joint_states_topic=" "))
+    path_ = Write_viewer_config(
+        tmp_path, lambda document_: document_["robot"].update(joint_states_topic=" ")
+    )
     with pytest.raises(ConfigError, match=r"robot\.joint_states_topic must not be empty"):
         Load_viewer_config(path_)
 
@@ -157,7 +166,11 @@ def test_adapter_config_names_the_29_motors() -> None:
     assert config_.lowstate_topic == "/lowstate"
     assert config_.joint_states_topic == Load_viewer_config(VIEWER_CONFIG).robot.joint_states_topic
     assert len(config_.motor_joint_names) == 29
-    assert config_.motor_joint_names[12:15] == ("waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint")
+    assert config_.motor_joint_names[12:15] == (
+        "waist_yaw_joint",
+        "waist_roll_joint",
+        "waist_pitch_joint",
+    )
 
 
 def test_adapter_config_names_joints_of_the_model() -> None:
@@ -175,7 +188,9 @@ def test_adapter_config_names_joints_of_the_model() -> None:
 def test_adapter_config_rejects_a_repeated_joint(tmp_path: Path) -> None:
     """A joint named twice would hide a motor."""
     document_ = yaml.safe_load(ADAPTER_CONFIG.read_text(encoding="utf-8"))
-    document_["g1_joint_states"]["motor_joint_names"][1] = document_["g1_joint_states"]["motor_joint_names"][0]
+    document_["g1_joint_states"]["motor_joint_names"][1] = document_["g1_joint_states"][
+        "motor_joint_names"
+    ][0]
     path_ = tmp_path / "g1_joint_states.yaml"
     path_.write_text(yaml.safe_dump(document_), encoding="utf-8")
     with pytest.raises(ConfigError, match="lists a joint twice"):

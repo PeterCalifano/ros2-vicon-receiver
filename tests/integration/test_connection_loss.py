@@ -31,7 +31,13 @@ def Network_namespace_available() -> bool:
     if shutil.which("unshare") is None or shutil.which("tc") is None:
         return False
     result_ = subprocess.run(
-        ["unshare", "-rn", "bash", "-c", "ip link set lo up && tc qdisc add dev lo root netem loss 100%"],
+        [
+            "unshare",
+            "-rn",
+            "bash",
+            "-c",
+            "ip link set lo up && tc qdisc add dev lo root netem loss 100%",
+        ],
         capture_output=True,
         timeout=30,
         check=False,
@@ -48,7 +54,14 @@ def test_dead_peer_is_detected(ros_env: dict[str, str]) -> None:
 
     environment_ = dict(ros_env, VICON_TEST_NETWORK_NAMESPACE="1")
     result_ = subprocess.run(
-        ["unshare", "-rn", "bash", "-c", f'ip link set lo up && exec "$0" --gtest_filter={TEST_NAME}', str(TEST_BINARY)],
+        [
+            "unshare",
+            "-rn",
+            "bash",
+            "-c",
+            f'ip link set lo up && exec "$0" --gtest_filter={TEST_NAME}',
+            str(TEST_BINARY),
+        ],
         env=environment_,
         capture_output=True,
         text=True,

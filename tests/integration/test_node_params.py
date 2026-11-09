@@ -32,9 +32,7 @@ def Node_command(config: Path | None) -> list[str]:
     return command_
 
 
-def Run_node_to_exit(
-    config: Path | None, env: dict[str, str]
-) -> subprocess.CompletedProcess[str]:
+def Run_node_to_exit(config: Path | None, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     """Run the node until it exits by itself (configuration errors), output combined."""
     return subprocess.run(
         Node_command(config),

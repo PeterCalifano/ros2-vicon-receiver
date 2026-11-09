@@ -202,7 +202,12 @@ def Subject_at_origin(name: str, ros_name: str) -> Any:
         ros_name=ros_name,
         quality=1.0,
         segments=[
-            ViewerSegment(name="root", position=np.zeros(3), wxyz=np.array([1.0, 0.0, 0.0, 0.0]), occluded=False)
+            ViewerSegment(
+                name="root",
+                position=np.zeros(3),
+                wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
+                occluded=False,
+            )
         ],
         markers=[ViewerMarker(name="m1", position=np.zeros(3), camera_count=4, occluded=False)],
     )

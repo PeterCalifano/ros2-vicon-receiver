@@ -32,10 +32,18 @@ def Make_frame(frame_number: int) -> SimpleNamespace:
         rotation_occluded=False,
     )
     marker_ = SimpleNamespace(
-        name="body1", position=SimpleNamespace(x=0.0, y=0.0, z=1.0), occluded=False, camera_ids=[1, 2, 3]
+        name="body1",
+        position=SimpleNamespace(x=0.0, y=0.0, z=1.0),
+        occluded=False,
+        camera_ids=[1, 2, 3],
     )
     subject_ = SimpleNamespace(
-        name="body", ros_name="body", quality_valid=True, quality=1.3, segments=[segment_], markers=[marker_]
+        name="body",
+        ros_name="body",
+        quality_valid=True,
+        quality=1.3,
+        segments=[segment_],
+        markers=[marker_],
     )
     return SimpleNamespace(
         header=SimpleNamespace(stamp=SimpleNamespace(sec=100, nanosec=frame_number * 10_000_000)),
@@ -61,20 +69,28 @@ def Use_frames(monkeypatch: pytest.MonkeyPatch, frames: Iterator[Any]) -> None:
     monkeypatch.setattr(export, "Read_vicon_frames", lambda bag_dir, topic: frames)
 
 
-def test_csv_export_writes_one_row_per_frame(session_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_csv_export_writes_one_row_per_frame(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Frames, poses and markers files with one row per frame (and per marker)."""
     Use_frames(monkeypatch, iter([Make_frame(1), Make_frame(2)]))
     count_, paths_ = Export(session_dir, ["csv"], topic=TOPIC)
 
     assert count_ == 2
-    assert sorted(path_.name for path_ in paths_) == ["frames.csv", "markers_body.csv", "poses_body_body.csv"]
+    assert sorted(path_.name for path_ in paths_) == [
+        "frames.csv",
+        "markers_body.csv",
+        "poses_body_body.csv",
+    ]
     with (session_dir / "exports" / "frames.csv").open(newline="", encoding="utf-8") as handle_:
         rows_ = list(csv.DictReader(handle_))
     assert [row_["frame_number"] for row_ in rows_] == ["1", "2"]
     assert rows_[0]["stamp_s"] == "100.010000000"
 
 
-def test_failed_read_leaves_no_partial_files(session_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_failed_read_leaves_no_partial_files(
+    session_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A bag that breaks half-way: the error is reported and no partial CSV is left behind."""
 
     def _Broken_bag() -> Iterator[Any]:

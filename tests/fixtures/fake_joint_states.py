@@ -63,7 +63,9 @@ def Main(argv: list[str]) -> int:
         while time.monotonic() - start_ < arguments_.seconds:
             elapsed_ = time.monotonic() - start_
             positions_ = dict(POSTURE_RAD)
-            positions_[WAIST_JOINT] = WAIST_AMPLITUDE_RAD * math.sin(2.0 * math.pi * elapsed_ / WAIST_PERIOD_S)
+            positions_[WAIST_JOINT] = WAIST_AMPLITUDE_RAD * math.sin(
+                2.0 * math.pi * elapsed_ / WAIST_PERIOD_S
+            )
             message_ = JointState()
             message_.header.stamp = node_.get_clock().now().to_msg()
             message_.name = names_

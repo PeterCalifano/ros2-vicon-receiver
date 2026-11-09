@@ -75,7 +75,12 @@ def Make_frame(index: int, now_s: float) -> ViconFrame:
         markers_.append(marker_)
 
     subject_ = SubjectState(
-        name="test-body", ros_name="test_body", quality_valid=True, quality=1.25, segments=[segment_], markers=markers_
+        name="test-body",
+        ros_name="test_body",
+        quality_valid=True,
+        quality=1.25,
+        segments=[segment_],
+        markers=markers_,
     )
 
     frame_ = ViconFrame(subjects=[subject_])

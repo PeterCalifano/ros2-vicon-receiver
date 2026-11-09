@@ -66,7 +66,9 @@ def Read_vicon_frames(bag_dir: Path, topic: str) -> Iterator[Any]:
     try:
         reader_.open(
             rosbag2_py.StorageOptions(uri=str(bag_dir), storage_id="mcap"),
-            rosbag2_py.ConverterOptions(input_serialization_format="cdr", output_serialization_format="cdr"),
+            rosbag2_py.ConverterOptions(
+                input_serialization_format="cdr", output_serialization_format="cdr"
+            ),
         )
     except RuntimeError as error_:
         raise ExportError(f"cannot open the bag {bag_dir}: {error_}") from error_
@@ -88,7 +90,9 @@ def Stamp_seconds(stamp: Any) -> float:
 
 def Safe_name(name: str) -> str:
     """Name usable in a file name or an HDF5 path (no '/' or spaces)."""
-    return "".join(character_ if character_.isalnum() or character_ in "-_." else "_" for character_ in name)
+    return "".join(
+        character_ if character_.isalnum() or character_ in "-_." else "_" for character_ in name
+    )
 
 
 # -------------------------------------------------------------------------------------------------
@@ -117,7 +121,16 @@ POSE_COLUMNS: list[str] = [
     "rotation_occluded",
     "quality",
 ]
-MARKER_COLUMNS: list[str] = ["frame_number", "stamp_s", "marker", "x", "y", "z", "occluded", "camera_count"]
+MARKER_COLUMNS: list[str] = [
+    "frame_number",
+    "stamp_s",
+    "marker",
+    "x",
+    "y",
+    "z",
+    "occluded",
+    "camera_count",
+]
 
 
 @dataclass
@@ -176,7 +189,9 @@ class CsvExporter:
                 )
 
             if subject_.markers:
-                writer_ = self._writer(f"markers_{Safe_name(subject_.ros_name)}.csv", MARKER_COLUMNS)
+                writer_ = self._writer(
+                    f"markers_{Safe_name(subject_.ros_name)}.csv", MARKER_COLUMNS
+                )
                 for marker_ in subject_.markers:
                     writer_.writerow(
                         [
@@ -217,7 +232,9 @@ class Hdf5Exporter:
 
     output_dir: Path
     name: str = "hdf5"
-    _frames: dict[str, list[Any]] = field(default_factory=lambda: {column_: [] for column_ in FRAME_COLUMNS})
+    _frames: dict[str, list[Any]] = field(
+        default_factory=lambda: {column_: [] for column_ in FRAME_COLUMNS}
+    )
     # key -> {frame index: values}; turned into dense arrays at the end
     _segments: dict[tuple[str, str], dict[int, tuple[Any, ...]]] = field(default_factory=dict)
     _markers: dict[tuple[str, str], dict[int, tuple[Any, ...]]] = field(default_factory=dict)
@@ -242,7 +259,12 @@ class Hdf5Exporter:
             for segment_ in subject_.segments:
                 self._segments.setdefault((subject_key_, Safe_name(segment_.name)), {})[index_] = (
                     (segment_.position.x, segment_.position.y, segment_.position.z),
-                    (segment_.orientation.x, segment_.orientation.y, segment_.orientation.z, segment_.orientation.w),
+                    (
+                        segment_.orientation.x,
+                        segment_.orientation.y,
+                        segment_.orientation.z,
+                        segment_.orientation.w,
+                    ),
                     bool(segment_.translation_occluded),
                     bool(segment_.rotation_occluded),
                 )
@@ -261,7 +283,9 @@ class Hdf5Exporter:
         try:
             import h5py
         except ImportError as error_:
-            raise ExportError("h5py is not installed (it is in the conda environment of environment.yml)") from error_
+            raise ExportError(
+                "h5py is not installed (it is in the conda environment of environment.yml)"
+            ) from error_
 
         count_ = len(self._frames["frame_number"])
         path_ = self.output_dir / "session.h5"
@@ -270,11 +294,19 @@ class Hdf5Exporter:
                 file_.attrs[key_] = value_
 
             frames_ = file_.create_group("frames")
-            frames_.create_dataset("frame_number", data=np.array(self._frames["frame_number"], dtype=np.uint64))
-            frames_.create_dataset("frames_dropped", data=np.array(self._frames["frames_dropped"], dtype=np.uint32))
-            frames_.create_dataset("any_occluded", data=np.array(self._frames["any_occluded"], dtype=bool))
+            frames_.create_dataset(
+                "frame_number", data=np.array(self._frames["frame_number"], dtype=np.uint64)
+            )
+            frames_.create_dataset(
+                "frames_dropped", data=np.array(self._frames["frames_dropped"], dtype=np.uint32)
+            )
+            frames_.create_dataset(
+                "any_occluded", data=np.array(self._frames["any_occluded"], dtype=bool)
+            )
             for column_ in ("stamp_s", "receive_stamp_s", "frame_rate_hz", "latency_total_s"):
-                frames_.create_dataset(column_, data=np.array(self._frames[column_], dtype=np.float64))
+                frames_.create_dataset(
+                    column_, data=np.array(self._frames[column_], dtype=np.float64)
+                )
 
             for subject_key_, values_ in self._quality.items():
                 quality_ = np.full(count_, math.nan)
@@ -328,7 +360,9 @@ def Session_metadata(session_dir: Path) -> dict[str, str]:
     return metadata_
 
 
-def Export(session_dir: Path, formats: list[str], topic: str | None = None) -> tuple[int, list[Path]]:
+def Export(
+    session_dir: Path, formats: list[str], topic: str | None = None
+) -> tuple[int, list[Path]]:
     """Export a session in the given formats.
 
     Args:
@@ -344,7 +378,9 @@ def Export(session_dir: Path, formats: list[str], topic: str | None = None) -> t
     """
     unknown_ = [format_ for format_ in formats if format_ not in EXPORTERS]
     if unknown_ or not formats:
-        raise ExportError(f"unknown or missing format {unknown_} (available: {', '.join(EXPORTERS)})")
+        raise ExportError(
+            f"unknown or missing format {unknown_} (available: {', '.join(EXPORTERS)})"
+        )
 
     bag_dir_ = session_dir / "bag"
     if not bag_dir_.is_dir():

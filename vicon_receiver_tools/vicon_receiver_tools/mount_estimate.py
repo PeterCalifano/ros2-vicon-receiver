@@ -75,7 +75,9 @@ class SampledMeshSurface:
     tree: cKDTree
 
     @classmethod
-    def From_mesh(cls, mesh: trimesh.Trimesh, spacing_m: float = SURFACE_SPACING_M, seed: int = 0) -> SampledMeshSurface:
+    def From_mesh(
+        cls, mesh: trimesh.Trimesh, spacing_m: float = SURFACE_SPACING_M, seed: int = 0
+    ) -> SampledMeshSurface:
         """Sample a mesh with about one point per spacing_m^2 of surface (reproducible)."""
         count_ = max(int(mesh.area / spacing_m**2), 1000)
         points_, _ = trimesh.sample.sample_surface(mesh, count_, seed=seed)
@@ -144,7 +146,9 @@ def Marker_constellation(recording: dict[str, Any], subject: str) -> tuple[list[
             if subject_.get("name") != subject or not subject_.get("segments"):
                 continue
             segment_ = subject_["segments"][0]
-            if segment_.get("translation_occluded", True) or segment_.get("rotation_occluded", True):
+            if segment_.get("translation_occluded", True) or segment_.get(
+                "rotation_occluded", True
+            ):
                 continue
             # Vicon sends [0, 0, 0, 0] for an occluded rotation: never use it, flagged or not
             if not Is_unit_quaternion(np.asarray(segment_["rotation_xyzw"], dtype=float)):
@@ -176,7 +180,9 @@ def Angle_difference_deg(first: float, second: float) -> float:
     return abs((first - second + 180.0) % 360.0 - 180.0)
 
 
-def Lateral_direction_deg(body_points: np.ndarray, pairs: list[tuple[int, int]]) -> tuple[float, list[float], float]:
+def Lateral_direction_deg(
+    body_points: np.ndarray, pairs: list[tuple[int, int]]
+) -> tuple[float, list[float], float]:
     """Direction of the link's left (y) axis in the body x-y plane, from left/right marker pairs.
 
     Args:
@@ -203,7 +209,9 @@ def Lateral_direction_deg(body_points: np.ndarray, pairs: list[tuple[int, int]])
             )
         directions_deg_.append(float(np.degrees(np.arctan2(difference_[1], difference_[0]))))
 
-    unit_vectors_ = np.array([[np.cos(np.radians(angle_)), np.sin(np.radians(angle_))] for angle_ in directions_deg_])
+    unit_vectors_ = np.array(
+        [[np.cos(np.radians(angle_)), np.sin(np.radians(angle_))] for angle_ in directions_deg_]
+    )
     mean_ = unit_vectors_.sum(axis=0)
     mean_deg_ = float(np.degrees(np.arctan2(mean_[1], mean_[0])))
     disagreement_deg_ = max(Angle_difference_deg(angle_, mean_deg_) for angle_ in directions_deg_)
@@ -234,7 +242,9 @@ def Fit_position(
         The translation, the per-marker errors and the standard deviations of the translation.
     """
     if len(body_points) < 4 or len(surfaces) != len(body_points):
-        raise MountEstimateError("at least 4 markers, each with a surface, are needed for the position")
+        raise MountEstimateError(
+            "at least 4 markers, each with a surface, are needed for the position"
+        )
     rotated_ = body_points @ rotation.T
 
     # Markers grouped by surface: one KD-tree query per surface
@@ -254,7 +264,9 @@ def Fit_position(
     guess_ = (centres_ - rotated_).mean(axis=0)
     best_: Any = None
     for offset_ in POSITION_START_OFFSETS_M:
-        result_ = least_squares(_Residuals, guess_ + np.asarray(offset_), diff_step=1e-3, max_nfev=300)
+        result_ = least_squares(
+            _Residuals, guess_ + np.asarray(offset_), diff_step=1e-3, max_nfev=300
+        )
         if best_ is None or result_.cost < best_.cost:
             best_ = result_
 
@@ -289,7 +301,9 @@ def Estimate_upright_mount(
     """
     if body_points.ndim != 2 or body_points.shape[1] != 3:
         raise MountEstimateError("marker positions must be N x 3")
-    lateral_deg_, pair_directions_deg_, disagreement_deg_ = Lateral_direction_deg(body_points, lateral_pairs)
+    lateral_deg_, pair_directions_deg_, disagreement_deg_ = Lateral_direction_deg(
+        body_points, lateral_pairs
+    )
 
     # The link's y axis points left; x = y cross z is 90 deg clockwise from it
     heading_deg_ = (lateral_deg_ - 90.0 + 180.0) % 360.0 - 180.0
@@ -308,7 +322,9 @@ def Estimate_upright_mount(
     )
 
 
-def Write_mount_file(path: Path, link: str, subject: str, estimate: MountEstimateResult, recording: str) -> None:
+def Write_mount_file(
+    path: Path, link: str, subject: str, estimate: MountEstimateResult, recording: str
+) -> None:
     """Write the mount (pose of the link in the body frame) as YAML for the viewer."""
     rotation_, translation_ = estimate.link_in_body()
     rpy_ = Rotation.from_matrix(rotation_).as_euler("xyz")
@@ -330,7 +346,13 @@ def Write_mount_file(path: Path, link: str, subject: str, estimate: MountEstimat
     path.write_text(header_ + yaml.safe_dump(document_, sort_keys=False), encoding="utf-8")
 
 
-def Report(estimate: MountEstimateResult, names: list[str], lateral_pairs: list[tuple[int, int]], link: str, subject: str) -> str:
+def Report(
+    estimate: MountEstimateResult,
+    names: list[str],
+    lateral_pairs: list[tuple[int, int]],
+    link: str,
+    subject: str,
+) -> str:
     """Text report of an estimate: pose, agreement of the pairs, per-marker errors."""
     rotation_, translation_ = estimate.link_in_body()
     rpy_deg_ = Rotation.from_matrix(rotation_).as_euler("xyz", degrees=True)
@@ -342,8 +364,12 @@ def Report(estimate: MountEstimateResult, names: list[str], lateral_pairs: list[
         f"  heading   link x axis at {estimate.heading_deg:.1f} deg in the body x-y plane",
     ]
     for (left_, right_), direction_deg_ in zip(lateral_pairs, estimate.pair_directions_deg):
-        lines_.append(f"  pair      right {names[right_]} -> left {names[left_]}: {direction_deg_:.1f} deg")
-    lines_.append(f"  pairs agree within {estimate.pair_disagreement_deg:.1f} deg; RMS {estimate.rms_m * 1000:.1f} mm")
+        lines_.append(
+            f"  pair      right {names[right_]} -> left {names[left_]}: {direction_deg_:.1f} deg"
+        )
+    lines_.append(
+        f"  pairs agree within {estimate.pair_disagreement_deg:.1f} deg; RMS {estimate.rms_m * 1000:.1f} mm"
+    )
     for index_, name_ in enumerate(names):
         lines_.append(f"  {name_:28s} error {estimate.marker_errors_m[index_] * 1000:6.1f} mm")
     return "\n".join(lines_)

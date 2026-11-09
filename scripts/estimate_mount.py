@@ -77,7 +77,9 @@ def Fail(message: str) -> int:
 
 def Tools_env_name() -> str:
     """Name of the conda environment of the tools, from environment.yml."""
-    match_ = re.search(r"^name:\s*(\S+)", ENVIRONMENT_FILE.read_text(encoding="utf-8"), re.MULTILINE)
+    match_ = re.search(
+        r"^name:\s*(\S+)", ENVIRONMENT_FILE.read_text(encoding="utf-8"), re.MULTILINE
+    )
     return match_.group(1) if match_ else ""
 
 
@@ -87,7 +89,9 @@ def Tools_env_prefix(name: str) -> Path | None:
     if not conda_:
         return None
     try:
-        listing_ = subprocess.run([conda_, "env", "list"], capture_output=True, text=True, check=True).stdout
+        listing_ = subprocess.run(
+            [conda_, "env", "list"], capture_output=True, text=True, check=True
+        ).stdout
     except (OSError, subprocess.CalledProcessError) as error_:
         print(f"[{SCRIPT_NAME}] WARNING: conda env list failed: {error_}", file=sys.stderr)
         return None
@@ -149,10 +153,14 @@ def Main(argv: list[str]) -> int:
     env_name_ = Tools_env_name()
     if Path(sys.prefix).name != env_name_:
         if os.environ.get(RESTART_GUARD):
-            return Fail(f"restarted with {sys.executable}, which is not the environment '{env_name_}'.")
+            return Fail(
+                f"restarted with {sys.executable}, which is not the environment '{env_name_}'."
+            )
         prefix_ = Tools_env_prefix(env_name_)
         if prefix_ is None or not (prefix_ / "bin" / "python").exists():
-            return Fail(f"Conda environment '{env_name_}' not found. Create it with: conda env create -f {ENVIRONMENT_FILE}")
+            return Fail(
+                f"Conda environment '{env_name_}' not found. Create it with: conda env create -f {ENVIRONMENT_FILE}"
+            )
         env_python_ = str(prefix_ / "bin" / "python")
         os.environ[RESTART_GUARD] = "1"
         os.execv(env_python_, [env_python_, str(Path(__file__).resolve()), *argv])
@@ -175,22 +183,35 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
         config_ = Load_viewer_config(viewer_config)
         settings_ = config_.mount_estimate
         recording_data_ = json.loads(recording.read_text(encoding="utf-8"))
-        names_, body_points_ = mount_estimate.Marker_constellation(recording_data_, config_.robot.subject)
+        names_, body_points_ = mount_estimate.Marker_constellation(
+            recording_data_, config_.robot.subject
+        )
 
         # Marker names of the config -> indices in the recording
         index_of_ = {name_: index_ for index_, name_ in enumerate(names_)}
-        configured_ = [name_ for pair_ in settings_.lateral_marker_pairs for name_ in (pair_.left, pair_.right)]
-        missing_ = [name_ for name_ in configured_ + list(settings_.marker_links) if name_ not in index_of_]
+        configured_ = [
+            name_ for pair_ in settings_.lateral_marker_pairs for name_ in (pair_.left, pair_.right)
+        ]
+        missing_ = [
+            name_ for name_ in configured_ + list(settings_.marker_links) if name_ not in index_of_
+        ]
         if missing_:
-            return Fail(f"markers of the viewer config not visible in the recording: {', '.join(missing_)}")
-        pairs_ = [(index_of_[pair_.left], index_of_[pair_.right]) for pair_ in settings_.lateral_marker_pairs]
+            return Fail(
+                f"markers of the viewer config not visible in the recording: {', '.join(missing_)}"
+            )
+        pairs_ = [
+            (index_of_[pair_.left], index_of_[pair_.right])
+            for pair_ in settings_.lateral_marker_pairs
+        ]
 
         # Surface of each marker: its configured link, else the mount link and the links fixed to it
         model_dir_ = REPO_ROOT / config_.robot.directory
         urdf_ = Load_urdf(model_dir_, config_.robot.urdf, load_meshes=False)
         mount_link_ = config_.robot.mount_link
         surfaces_by_link_ = {
-            None: mount_estimate.SampledMeshSurface.From_mesh(Rigid_mesh(urdf_, mount_link_, model_dir_))
+            None: mount_estimate.SampledMeshSurface.From_mesh(
+                Rigid_mesh(urdf_, mount_link_, model_dir_)
+            )
         }
         for link_ in sorted(set(settings_.marker_links.values())):
             surfaces_by_link_[link_] = mount_estimate.SampledMeshSurface.From_mesh(
@@ -198,17 +219,30 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
             )
         surfaces_ = [surfaces_by_link_[settings_.marker_links.get(name_)] for name_ in names_]
 
-        estimate_ = mount_estimate.Estimate_upright_mount(body_points_, pairs_, surfaces_, settings_.surface_offset_m)
-    except (OSError, json.JSONDecodeError, mount_estimate.MountEstimateError, RobotModelError, ConfigError, ValueError) as error_:
+        estimate_ = mount_estimate.Estimate_upright_mount(
+            body_points_, pairs_, surfaces_, settings_.surface_offset_m
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+        mount_estimate.MountEstimateError,
+        RobotModelError,
+        ConfigError,
+        ValueError,
+    ) as error_:
         return Fail(f"mount estimate failed: {error_}")
 
     print(mount_estimate.Report(estimate_, names_, pairs_, mount_link_, config_.robot.subject))
     if write:
         mount_path_ = REPO_ROOT / config_.robot.mount_file
         resolved_ = recording.resolve()
-        shown_ = resolved_.relative_to(REPO_ROOT) if resolved_.is_relative_to(REPO_ROOT) else resolved_
+        shown_ = (
+            resolved_.relative_to(REPO_ROOT) if resolved_.is_relative_to(REPO_ROOT) else resolved_
+        )
         try:
-            mount_estimate.Write_mount_file(mount_path_, mount_link_, config_.robot.subject, estimate_, str(shown_))
+            mount_estimate.Write_mount_file(
+                mount_path_, mount_link_, config_.robot.subject, estimate_, str(shown_)
+            )
         except OSError as error_:
             return Fail(f"cannot write {mount_path_}: {error_}")
         print(f"written: {mount_path_}")
