@@ -20,11 +20,16 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 import yaml
+
+if TYPE_CHECKING:
+    from vicon_receiver_tools.config import YamlValue
+    from vicon_receiver_tools.viewer import ViewerSubject, ViserLiveViewer
+    from vicon_receiver_tools.viewer_config import ViewerConfig
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 
@@ -184,7 +189,7 @@ JOINTED_URDF: str = """<?xml version="1.0"?>
 """
 
 
-def Write_viewer_config(tmp_path: Path, edit: Callable[[dict[str, Any]], None]) -> Path:
+def Write_viewer_config(tmp_path: Path, edit: Callable[[dict[str, YamlValue]], None]) -> Path:
     """Copy of config/viewer.yaml, changed by a function that edits the parsed document."""
     document_ = yaml.safe_load(VIEWER_CONFIG.read_text(encoding="utf-8"))
     edit(document_)
@@ -193,7 +198,7 @@ def Write_viewer_config(tmp_path: Path, edit: Callable[[dict[str, Any]], None]) 
     return path_
 
 
-def Subject_at_origin(name: str, ros_name: str) -> Any:
+def Subject_at_origin(name: str, ros_name: str) -> ViewerSubject:
     """ViewerSubject with one visible segment at the origin and one visible marker."""
     from vicon_receiver_tools.viewer import ViewerMarker, ViewerSegment, ViewerSubject
 
@@ -222,8 +227,8 @@ class ViewerScene:
         viewer: The ViserLiveViewer.
     """
 
-    config: Any
-    viewer: Any
+    config: ViewerConfig
+    viewer: ViserLiveViewer
 
 
 @pytest.fixture
@@ -240,7 +245,7 @@ def jointed_robot_scene(tmp_path: Path) -> Iterator[ViewerScene]:
         free_socket_.bind(("127.0.0.1", 0))
         port_ = free_socket_.getsockname()[1]
 
-    def _Edit(document_: dict[str, Any]) -> None:
+    def _Edit(document_: dict[str, YamlValue]) -> None:
         document_["viewer"]["port"] = port_
         document_["robot"].update(
             directory="model", urdf="jointed.urdf", mount_link="torso", mount_file="no_mount.yaml"
@@ -281,7 +286,7 @@ def Wait_or_kill(process: subprocess.Popen, timeout_s: float) -> None:
 # -------------------------------------------------------------------------------------------------
 # Parameter files
 # -------------------------------------------------------------------------------------------------
-def Load_default_parameters() -> dict[str, Any]:
+def Load_default_parameters() -> dict[str, YamlValue]:
     """Return the parameters section of config/vicon_client.yaml."""
     with CONFIG_FILE.open("r", encoding="utf-8") as stream_:
         document_ = yaml.safe_load(stream_)
@@ -301,7 +306,7 @@ def make_config(tmp_path: Path) -> ConfigFactory:
     counter_ = 0
 
     def _Make_config(
-        overrides: dict[str, Any] | None = None,
+        overrides: dict[str, YamlValue] | None = None,
         remove: list[str] | None = None,
     ) -> Path:
         nonlocal counter_

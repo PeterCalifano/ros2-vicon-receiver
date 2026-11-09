@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import numpy as np
 import trimesh
@@ -121,7 +121,44 @@ class MountEstimateResult:
         return rotation_, -rotation_ @ self.translation
 
 
-def Marker_constellation(recording: dict[str, Any], subject: str) -> tuple[list[str], np.ndarray]:
+class ProbeMarker(TypedDict, total=False):
+    """The fields of a marker of a probe recording that the estimate reads."""
+
+    name: str
+    occluded: bool
+    position_mm: list[float]
+
+
+class ProbeSegment(TypedDict, total=False):
+    """The fields of a segment of a probe recording that the estimate reads."""
+
+    translation_occluded: bool
+    rotation_occluded: bool
+    translation_mm: list[float]
+    rotation_xyzw: list[float]
+
+
+class ProbeSubject(TypedDict, total=False):
+    """The fields of a subject of a probe recording that the estimate reads."""
+
+    name: str
+    segments: list[ProbeSegment]
+    markers: list[ProbeMarker]
+
+
+class ProbeFrame(TypedDict, total=False):
+    """The fields of a frame of a probe recording that the estimate reads."""
+
+    subjects: list[ProbeSubject]
+
+
+class ProbeRecording(TypedDict, total=False):
+    """The fields of a probe recording (scripts/probe.sh, JSON) that the estimate reads."""
+
+    frames: list[ProbeFrame]
+
+
+def Marker_constellation(recording: ProbeRecording, subject: str) -> tuple[list[str], np.ndarray]:
     """Average marker positions of a subject in its Vicon body frame, from a probe recording.
 
     Frames where the segment is occluded or has no valid rotation are skipped, and occluded
@@ -262,13 +299,13 @@ def Fit_position(
     # First guess: each marker at the centre of its surface, on average; several starts around it
     centres_ = np.array([surface_.points.mean(axis=0) for surface_ in surfaces])
     guess_ = (centres_ - rotated_).mean(axis=0)
-    best_: Any = None
-    for offset_ in POSITION_START_OFFSETS_M:
-        result_ = least_squares(
-            _Residuals, guess_ + np.asarray(offset_), diff_step=1e-3, max_nfev=300
-        )
-        if best_ is None or result_.cost < best_.cost:
-            best_ = result_
+    best_ = min(
+        (
+            least_squares(_Residuals, guess_ + np.asarray(offset_), diff_step=1e-3, max_nfev=300)
+            for offset_ in POSITION_START_OFFSETS_M
+        ),
+        key=lambda result_: result_.cost,
+    )
 
     errors_ = _Residuals(best_.x)
     # Gauss-Newton covariance: residual variance (N - 3 degrees of freedom) times (J^T J)^-1

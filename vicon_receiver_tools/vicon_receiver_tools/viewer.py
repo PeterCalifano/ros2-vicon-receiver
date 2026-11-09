@@ -27,7 +27,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -40,6 +40,13 @@ from vicon_receiver_tools.viewer_config import (
     Save_mount,
     ViewerConfig,
 )
+
+if TYPE_CHECKING:
+    import viser
+    import yourdfpy
+    from sensor_msgs.msg import JointState
+    from vicon_receiver_msgs.msg import SegmentState, ViconFrame
+    from viser.extras import ViserUrdf
 
 # Marker colours (RGB): enough cameras, few cameras
 COLOR_GOOD: tuple[int, int, int] = (40, 180, 60)
@@ -124,7 +131,7 @@ def Segment_key(subject_ros_name: str, segment_name: str) -> str:
     return f"{subject_ros_name}/{segment_name}"
 
 
-def Viewer_segment_from_message(segment: Any) -> ViewerSegment:
+def Viewer_segment_from_message(segment: SegmentState) -> ViewerSegment:
     """Convert a SegmentState; a segment without a valid rotation counts as occluded."""
     # Vicon/ROS order x, y, z, w -> viser order w, x, y, z
     wxyz_ = np.array(
@@ -141,7 +148,7 @@ def Viewer_segment_from_message(segment: Any) -> ViewerSegment:
     )
 
 
-def Viewer_frame_from_message(message: Any) -> ViewerFrame:
+def Viewer_frame_from_message(message: ViconFrame) -> ViewerFrame:
     """Convert a vicon_receiver_msgs/ViconFrame (or an object with the same fields)."""
     subjects_: list[ViewerSubject] = []
     for subject_ in message.subjects:
@@ -276,28 +283,27 @@ class LatestFrameBuffer:
     """
 
     trail_length: int
-    deserialize: Callable[[bytes], Any] | None = None
+    deserialize: Callable[[bytes], ViconFrame] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _pending: Any = field(default=None, repr=False)
-    _pending_is_serialized: bool = field(default=False, repr=False)
+    _pending: bytes | ViconFrame | None = field(default=None, repr=False)
     _latest_view: ViewerFrame | None = field(default=None, repr=False)
     _trails: dict[str, deque] = field(default_factory=dict, repr=False)
     _receive_times: deque = field(default_factory=lambda: deque(maxlen=200), repr=False)
 
     def put_serialized(self, data: bytes, receive_time_s: float | None = None) -> None:
         """Store a serialized ViconFrame (ROS callback with raw=True): no decoding here."""
-        self._store(data, True, receive_time_s)
+        self._store(data, receive_time_s)
 
-    def put_message(self, message: Any, receive_time_s: float | None = None) -> None:
+    def put_message(self, message: ViconFrame, receive_time_s: float | None = None) -> None:
         """Store an already decoded ViconFrame (or an object with the same fields)."""
-        self._store(message, False, receive_time_s)
+        self._store(message, receive_time_s)
 
     def latest(self) -> ViewerFrame | None:
         """Most recent frame; a new message is decoded and added to the trails here."""
         with self._lock:
             if self._pending is not None:
                 message_ = self._pending
-                if self._pending_is_serialized:
+                if isinstance(message_, bytes):
                     if self.deserialize is None:
                         raise ValueError(
                             "LatestFrameBuffer: serialized message without deserialize"
@@ -327,12 +333,11 @@ class LatestFrameBuffer:
             return 0.0
         return (len(times_) - 1) / (times_[-1] - times_[0])
 
-    def _store(self, item: Any, serialized: bool, receive_time_s: float | None) -> None:
+    def _store(self, item: bytes | ViconFrame, receive_time_s: float | None) -> None:
         """Keep only the newest item; frames in between are not drawn."""
         now_ = time.monotonic() if receive_time_s is None else receive_time_s
         with self._lock:
             self._pending = item
-            self._pending_is_serialized = serialized
             self._receive_times.append(now_)
 
     def _extend_trails(self, frame: ViewerFrame) -> None:
@@ -359,27 +364,26 @@ class LatestJointStates:
         deserialize: Turns a serialized message into a message object (rclpy deserialize).
     """
 
-    deserialize: Callable[[bytes], Any] | None = None
+    deserialize: Callable[[bytes], JointState] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _pending: Any = field(default=None, repr=False)
-    _pending_is_serialized: bool = field(default=False, repr=False)
+    _pending: bytes | JointState | None = field(default=None, repr=False)
     _positions: dict[str, float] = field(default_factory=dict, repr=False)
     _last_receive_s: float | None = field(default=None, repr=False)
 
     def put_serialized(self, data: bytes, receive_time_s: float | None = None) -> None:
         """Store a serialized JointState (ROS callback with raw=True): no decoding here."""
-        self._store(data, True, receive_time_s)
+        self._store(data, receive_time_s)
 
-    def put_message(self, message: Any, receive_time_s: float | None = None) -> None:
+    def put_message(self, message: JointState, receive_time_s: float | None = None) -> None:
         """Store an already decoded JointState (or an object with name and position)."""
-        self._store(message, False, receive_time_s)
+        self._store(message, receive_time_s)
 
     def positions(self) -> dict[str, float]:
         """Angles kept so far [rad] by joint name; a new message is decoded and merged here."""
         with self._lock:
             if self._pending is not None:
                 message_ = self._pending
-                if self._pending_is_serialized:
+                if isinstance(message_, bytes):
                     if self.deserialize is None:
                         raise ValueError(
                             "LatestJointStates: serialized message without deserialize"
@@ -400,11 +404,10 @@ class LatestJointStates:
             return None
         return (time.monotonic() if now_s is None else now_s) - last_
 
-    def _store(self, item: Any, serialized: bool, receive_time_s: float | None) -> None:
+    def _store(self, item: bytes | JointState, receive_time_s: float | None) -> None:
         """Keep only the newest message until the next scene update."""
         with self._lock:
             self._pending = item
-            self._pending_is_serialized = serialized
             self._last_receive_s = time.monotonic() if receive_time_s is None else receive_time_s
 
 
@@ -414,14 +417,14 @@ class LatestJointStates:
 class ViserLiveViewer:
     """Scene and GUI of the viewer on a viser server."""
 
-    def __init__(self, config: ViewerConfig, repo_root: Path, server: Any) -> None:
+    def __init__(self, config: ViewerConfig, repo_root: Path, server: viser.ViserServer) -> None:
         """Build the static scene, load the robot model (if fetched) and the GUI."""
         self._config = config
         self._repo_root = repo_root
         self._server = server
-        self._segment_handles: dict[str, Any] = {}
-        self._trail_handles: dict[str, Any] = {}
-        self._marker_handles: dict[str, Any] = {}
+        self._segment_handles: dict[str, viser.FrameHandle] = {}
+        self._trail_handles: dict[str, viser.LineSegmentsHandle] = {}
+        self._marker_handles: dict[str, viser.PointCloudHandle] = {}
         self._last_telemetry_s = 0.0
         self._last_trail_s = 0.0
 
@@ -442,18 +445,18 @@ class ViserLiveViewer:
             else f"no {config.robot.mount_file}: identity mount (run scripts/estimate_mount.py)"
         )
 
-        self._robot_frame: Any = None
+        self._robot_frame: viser.FrameHandle | None = None
         # Last robot position: browser cameras are pointed at it (the robot may be far from the
         # Vicon origin, where a browser camera starts)
         self._robot_position: np.ndarray | None = None
         self._robot_heading_rad = 0.0
         server.on_client_connect(self._point_camera_at_robot)
-        self._camera_handles: dict[str, Any] = {}
+        self._camera_handles: dict[str, viser.CameraFrustumHandle] = {}
         self._root_in_mount = np.eye(4)
         self._cameras_in_mount: dict[str, np.ndarray] = {}
         # Model and its joint angles (zero until joint states arrive)
-        self._urdf: Any = None
-        self._viser_urdf: Any = None
+        self._urdf: yourdfpy.URDF | None = None
+        self._viser_urdf: ViserUrdf | None = None
         self._joint_names: tuple[str, ...] = ()
         self._configuration = np.zeros(0)
         self._joints_line = Joint_states_markdown((), {}, None, config.robot.joint_states_topic)
@@ -614,6 +617,8 @@ class ViserLiveViewer:
 
     def _set_robot_visible(self, visible: bool) -> None:
         """Show or hide the robot model and the camera frustums together."""
+        if self._robot_frame is None:
+            return
         self._robot_frame.visible = visible
         for handle_ in self._camera_handles.values():
             handle_.visible = visible
@@ -647,6 +652,8 @@ class ViserLiveViewer:
 
     def _apply_configuration(self, configuration: np.ndarray) -> None:
         """Set the joint angles of the model and the root and camera poses in the mount frame."""
+        if self._viser_urdf is None or self._urdf is None:
+            return
         from vicon_receiver_tools.robot_model import Link_pose
 
         robot_ = self._config.robot
@@ -678,7 +685,7 @@ class ViserLiveViewer:
             point_shape="circle",
         )
 
-    def _point_camera_at_robot(self, client: Any) -> None:
+    def _point_camera_at_robot(self, client: viser.ClientHandle) -> None:
         """Point a browser camera at the robot (once it has been seen), from CAMERA_OFFSET_M."""
         if self._robot_position is None:
             return
@@ -704,7 +711,7 @@ class ViserLiveViewer:
 
     def _place_robot(self) -> None:
         """Pose of the robot root and of the frustums from the mount link pose and the joint angles."""
-        if self._mount_in_world is None:
+        if self._mount_in_world is None or self._robot_frame is None:
             return
         mount_in_world_ = self._mount_in_world
         wxyz_, position_ = Matrix_to_wxyz_position(mount_in_world_ @ self._root_in_mount)

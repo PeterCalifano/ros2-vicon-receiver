@@ -16,7 +16,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 TOOLS_DIR: Path = REPO_ROOT / "vicon_receiver_tools"
@@ -58,6 +58,18 @@ class G1JointStatesConfig:
     lowstate_topic: str
     joint_states_topic: str
     motor_joint_names: tuple[str, ...]
+
+
+class MotorState(Protocol):
+    """The field of unitree_hg/msg/MotorState that the adapter reads."""
+
+    q: float
+
+
+class LowState(Protocol):
+    """The field of unitree_hg/msg/LowState that the adapter reads."""
+
+    motor_state: Sequence[MotorState]
 
 
 def Fail(message: str) -> int:
@@ -103,28 +115,34 @@ def Load_config(path: Path) -> G1JointStatesConfig:
     section_ = document_.get(CONFIG_SECTION) if isinstance(document_, dict) else None
     if not isinstance(section_, dict):
         raise ConfigError(f"{path}: {CONFIG_SECTION} not found")
-    for key_ in ("lowstate_topic", "joint_states_topic"):
-        if not isinstance(section_.get(key_), str) or not section_[key_].strip():
-            raise ConfigError(f"{CONFIG_SECTION}.{key_} must be a non-empty string")
+
+    def _Required_text(key: str) -> str:
+        value_ = section_.get(key)
+        if not isinstance(value_, str) or not value_.strip():
+            raise ConfigError(f"{CONFIG_SECTION}.{key} must be a non-empty string")
+        return value_
+
+    lowstate_topic_ = _Required_text("lowstate_topic")
+    joint_states_topic_ = _Required_text("joint_states_topic")
+
     names_ = section_.get("motor_joint_names")
-    if (
-        not isinstance(names_, list)
-        or not names_
-        or not all(isinstance(name_, str) and name_ for name_ in names_)
-    ):
+    if not isinstance(names_, list):
+        names_ = []
+    joint_names_ = [name_ for name_ in names_ if isinstance(name_, str) and name_]
+    if not joint_names_ or len(joint_names_) != len(names_):
         raise ConfigError(
             f"{CONFIG_SECTION}.motor_joint_names must be a non-empty list of joint names"
         )
-    if len(set(names_)) != len(names_):
+    if len(set(joint_names_)) != len(joint_names_):
         raise ConfigError(f"{CONFIG_SECTION}.motor_joint_names lists a joint twice")
     return G1JointStatesConfig(
-        lowstate_topic=section_["lowstate_topic"],
-        joint_states_topic=section_["joint_states_topic"],
-        motor_joint_names=tuple(names_),
+        lowstate_topic=lowstate_topic_,
+        joint_states_topic=joint_states_topic_,
+        motor_joint_names=tuple(joint_names_),
     )
 
 
-def Motor_angles(motor_states: Sequence[Any], joint_count: int) -> list[float]:
+def Motor_angles(motor_states: Sequence[MotorState], joint_count: int) -> list[float]:
     """Angles [rad] of the first joint_count motors (MotorState.q), in motor index order.
 
     Raises:
@@ -160,7 +178,7 @@ def Main(argv: list[str]) -> int:
     except ImportError as error_:
         return Fail(f"ROS 2 not available ({error_}): source scripts/source_ros_env.sh first.")
     try:
-        from unitree_hg.msg import LowState
+        from unitree_hg.msg import LowState as LowStateMessage
     except ImportError:
         return Fail(
             "unitree_hg messages not found: source the overlay of the workspace that provides them."
@@ -172,7 +190,7 @@ def Main(argv: list[str]) -> int:
     try:
         publisher_ = node_.create_publisher(JointState, config_.joint_states_topic, 10)
 
-        def _On_lowstate(message: Any) -> None:
+        def _On_lowstate(message: LowState) -> None:
             output_ = JointState()
             output_.header.stamp = node_.get_clock().now().to_msg()
             output_.name = list(config_.motor_joint_names)
@@ -183,7 +201,7 @@ def Main(argv: list[str]) -> int:
                 return
             publisher_.publish(output_)
 
-        node_.create_subscription(LowState, config_.lowstate_topic, _On_lowstate, 10)
+        node_.create_subscription(LowStateMessage, config_.lowstate_topic, _On_lowstate, 10)
         print(
             f"[{SCRIPT_NAME}] {config_.lowstate_topic} (unitree_hg/LowState) -> "
             f"{config_.joint_states_topic} (JointState, {joint_count_} joints)"

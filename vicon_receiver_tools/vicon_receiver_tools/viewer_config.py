@@ -18,13 +18,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation
 
-from vicon_receiver_tools.config import ConfigError, Load_yaml
+from vicon_receiver_tools.config import ConfigError, Load_yaml, YamlValue
 
 
 @dataclass(frozen=True)
@@ -133,7 +132,7 @@ IDENTITY_MOUNT: LinkPoseInBodyFrame = LinkPoseInBodyFrame(
 )
 
 
-def _Require(section: dict[str, Any], key: str, kind: type, where: str) -> Any:
+def _Require[T](section: YamlValue, key: str, kind: type[T], where: str) -> T:
     """Return section[key], checking that it exists and has the given type."""
     if not isinstance(section, dict) or key not in section:
         raise ConfigError(f"{where}.{key} not found")
@@ -146,7 +145,7 @@ def _Require(section: dict[str, Any], key: str, kind: type, where: str) -> Any:
     return value_
 
 
-def _Optional_text(section: dict[str, Any], key: str, where: str) -> str | None:
+def _Optional_text(section: dict[str, YamlValue], key: str, where: str) -> str | None:
     """Return section[key] if given (a non-empty string), None if absent or null."""
     if section.get(key) is None:
         return None

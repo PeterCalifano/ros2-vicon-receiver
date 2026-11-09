@@ -14,11 +14,11 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from conftest import (
+    ConfigFactory,
     DEFAULT_TIMEOUT_S,
     PROBE_EXECUTABLE,
     Load_default_parameters,
@@ -49,7 +49,7 @@ def Run_probe(args: list[str], env: dict[str, str]) -> subprocess.CompletedProce
     )
 
 
-def Load_recording(path: Path) -> dict[str, Any]:
+def Load_recording(path: Path) -> dict[str, object]:
     """Parse a probe recording; fails the test if it is not valid JSON."""
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -199,7 +199,7 @@ def test_probe_requires_stream_mode(ros_env: dict[str, str]) -> None:
 
 
 def test_probe_sh_reads_host_from_config(
-    shell: ShellRunner, make_config: Any, tcp_listener: TcpListener, tmp_path: Path
+    shell: ShellRunner, make_config: ConfigFactory, tcp_listener: TcpListener, tmp_path: Path
 ) -> None:
     """Without --host, the server address comes from the parameters file."""
     config_ = make_config(overrides={"hostname": tcp_listener.host_spec})

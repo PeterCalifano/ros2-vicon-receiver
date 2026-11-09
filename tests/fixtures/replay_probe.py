@@ -16,7 +16,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import rclpy
 from builtin_interfaces.msg import Time
@@ -35,7 +34,7 @@ def To_time(seconds: float) -> Time:
     return Time(sec=whole_, nanosec=min(int(round((seconds - whole_) * 1e9)), 999_999_999))
 
 
-def Make_frame(frame: dict[str, Any]) -> ViconFrame:
+def Make_frame(frame: dict[str, object]) -> ViconFrame:
     """ViconFrame of one recorded frame, stamped now."""
     message_ = ViconFrame()
     now_ = time.time()

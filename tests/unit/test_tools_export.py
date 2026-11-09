@@ -11,7 +11,6 @@ import csv
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -64,7 +63,7 @@ def session_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def Use_frames(monkeypatch: pytest.MonkeyPatch, frames: Iterator[Any]) -> None:
+def Use_frames(monkeypatch: pytest.MonkeyPatch, frames: Iterator[SimpleNamespace]) -> None:
     """Make Export() read the given frames instead of an MCAP bag."""
     monkeypatch.setattr(export, "Read_vicon_frames", lambda bag_dir, topic: frames)
 
@@ -93,7 +92,7 @@ def test_failed_read_leaves_no_partial_files(
 ) -> None:
     """A bag that breaks half-way: the error is reported and no partial CSV is left behind."""
 
-    def _Broken_bag() -> Iterator[Any]:
+    def _Broken_bag() -> Iterator[SimpleNamespace]:
         yield Make_frame(1)
         raise ExportError("truncated bag")
 

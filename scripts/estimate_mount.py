@@ -208,7 +208,7 @@ def Estimate(recording: Path, viewer_config: Path, write: bool) -> int:
         model_dir_ = REPO_ROOT / config_.robot.directory
         urdf_ = Load_urdf(model_dir_, config_.robot.urdf, load_meshes=False)
         mount_link_ = config_.robot.mount_link
-        surfaces_by_link_ = {
+        surfaces_by_link_: dict[str | None, mount_estimate.SampledMeshSurface] = {
             None: mount_estimate.SampledMeshSurface.From_mesh(
                 Rigid_mesh(urdf_, mount_link_, model_dir_)
             )

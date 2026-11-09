@@ -25,14 +25,29 @@ import argparse
 import csv
 import math
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Protocol, TextIO
 
 import numpy as np
 
 from vicon_receiver_tools.config import ConfigError, Read_parameter
+
+if TYPE_CHECKING:
+    from builtin_interfaces.msg import Time
+    from vicon_receiver_msgs.msg import ViconFrame
+
+# Values kept per frame until the HDF5 file is written
+type SegmentRow = tuple[tuple[float, float, float], tuple[float, float, float, float], bool, bool]
+type MarkerRow = tuple[tuple[float, float, float], bool, int]
+
+
+class CsvRowWriter(Protocol):
+    """What the exporters use of the object returned by csv.writer()."""
+
+    def writerow(self, row: Iterable[object], /) -> object:
+        """Write one row."""
 
 
 class ExportError(Exception):
@@ -52,7 +67,7 @@ def Session_topic(session_dir: Path) -> str:
     return f"/{namespace_}/frame"
 
 
-def Read_vicon_frames(bag_dir: Path, topic: str) -> Iterator[Any]:
+def Read_vicon_frames(bag_dir: Path, topic: str) -> Iterator[ViconFrame]:
     """Yield the ViconFrame messages of an MCAP bag, in recording order.
 
     Raises:
@@ -83,7 +98,7 @@ def Read_vicon_frames(bag_dir: Path, topic: str) -> Iterator[Any]:
         yield deserialize_message(data_, ViconFrame)
 
 
-def Stamp_seconds(stamp: Any) -> float:
+def Stamp_seconds(stamp: Time) -> float:
     """Seconds of a builtin_interfaces/Time."""
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
@@ -139,11 +154,11 @@ class CsvExporter:
 
     output_dir: Path
     _files: dict[str, TextIO] = field(default_factory=dict, repr=False)
-    _writers: dict[str, Any] = field(default_factory=dict, repr=False)
+    _writers: dict[str, CsvRowWriter] = field(default_factory=dict, repr=False)
 
     name: str = "csv"
 
-    def _writer(self, file_name: str, columns: list[str]) -> Any:
+    def _writer(self, file_name: str, columns: list[str]) -> CsvRowWriter:
         """CSV writer of a file, created with its header on first use."""
         if file_name not in self._writers:
             handle_ = (self.output_dir / file_name).open("w", newline="", encoding="utf-8")
@@ -153,7 +168,7 @@ class CsvExporter:
             self._writers[file_name] = writer_
         return self._writers[file_name]
 
-    def add(self, frame: Any) -> None:
+    def add(self, frame: ViconFrame) -> None:
         """Write the rows of one frame."""
         stamp_ = Stamp_seconds(frame.header.stamp)
         self._writer("frames.csv", FRAME_COLUMNS).writerow(
@@ -232,15 +247,15 @@ class Hdf5Exporter:
 
     output_dir: Path
     name: str = "hdf5"
-    _frames: dict[str, list[Any]] = field(
+    _frames: dict[str, list[float]] = field(
         default_factory=lambda: {column_: [] for column_ in FRAME_COLUMNS}
     )
     # key -> {frame index: values}; turned into dense arrays at the end
-    _segments: dict[tuple[str, str], dict[int, tuple[Any, ...]]] = field(default_factory=dict)
-    _markers: dict[tuple[str, str], dict[int, tuple[Any, ...]]] = field(default_factory=dict)
+    _segments: dict[tuple[str, str], dict[int, SegmentRow]] = field(default_factory=dict)
+    _markers: dict[tuple[str, str], dict[int, MarkerRow]] = field(default_factory=dict)
     _quality: dict[str, dict[int, float]] = field(default_factory=dict)
 
-    def add(self, frame: Any) -> None:
+    def add(self, frame: ViconFrame) -> None:
         """Store one frame."""
         index_ = len(self._frames["frame_number"])
         self._frames["frame_number"].append(frame.frame_number)
@@ -310,16 +325,21 @@ class Hdf5Exporter:
 
             for subject_key_, values_ in self._quality.items():
                 quality_ = np.full(count_, math.nan)
-                for index_, value_ in values_.items():
-                    quality_[index_] = value_
+                for index_, quality_value_ in values_.items():
+                    quality_[index_] = quality_value_
                 file_.create_dataset(f"subjects/{subject_key_}/quality", data=quality_)
 
-            for (subject_key_, segment_key_), samples_ in self._segments.items():
+            for (subject_key_, segment_key_), segment_rows_ in self._segments.items():
                 position_ = np.full((count_, 3), math.nan)
                 orientation_ = np.full((count_, 4), math.nan)
                 translation_occluded_ = np.ones(count_, dtype=bool)
                 rotation_occluded_ = np.ones(count_, dtype=bool)
-                for index_, (point_, quaternion_, t_occluded_, r_occluded_) in samples_.items():
+                for index_, (
+                    point_,
+                    quaternion_,
+                    t_occluded_,
+                    r_occluded_,
+                ) in segment_rows_.items():
                     position_[index_] = point_
                     orientation_[index_] = quaternion_
                     translation_occluded_[index_] = t_occluded_
@@ -330,11 +350,11 @@ class Hdf5Exporter:
                 group_.create_dataset("translation_occluded", data=translation_occluded_)
                 group_.create_dataset("rotation_occluded", data=rotation_occluded_)
 
-            for (subject_key_, marker_key_), samples_ in self._markers.items():
+            for (subject_key_, marker_key_), marker_rows_ in self._markers.items():
                 position_ = np.full((count_, 3), math.nan)
                 occluded_ = np.ones(count_, dtype=bool)
                 camera_count_ = np.zeros(count_, dtype=np.uint32)
-                for index_, (point_, marker_occluded_, cameras_) in samples_.items():
+                for index_, (point_, marker_occluded_, cameras_) in marker_rows_.items():
                     position_[index_] = point_
                     occluded_[index_] = marker_occluded_
                     camera_count_[index_] = cameras_

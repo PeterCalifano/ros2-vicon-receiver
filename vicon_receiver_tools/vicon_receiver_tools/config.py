@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -36,11 +35,17 @@ DEFAULT_NODE_NAME: str = "vicon_client"
 PARAMETERS_KEY: str = "ros__parameters"
 
 
+# A value of a YAML document, as yaml.safe_load() returns it for our files
+type YamlValue = str | int | float | bool | None | list[YamlValue] | dict[str, YamlValue]
+
+
 class ConfigError(Exception):
     """The parameters file cannot be read or does not contain the requested entry."""
 
 
-def Load_node_parameters(config_file: Path, node_name: str = DEFAULT_NODE_NAME) -> dict[str, Any]:
+def Load_node_parameters(
+    config_file: Path, node_name: str = DEFAULT_NODE_NAME
+) -> dict[str, YamlValue]:
     """Return the parameters section of one node from a ROS 2 parameters file.
 
     Args:
@@ -73,7 +78,9 @@ def Load_node_parameters(config_file: Path, node_name: str = DEFAULT_NODE_NAME) 
     return parameters_
 
 
-def Read_parameter(config_file: Path, param_name: str, node_name: str = DEFAULT_NODE_NAME) -> Any:
+def Read_parameter(
+    config_file: Path, param_name: str, node_name: str = DEFAULT_NODE_NAME
+) -> YamlValue:
     """Return the value of one parameter from a ROS 2 parameters file.
 
     Args:
@@ -90,7 +97,7 @@ def Read_parameter(config_file: Path, param_name: str, node_name: str = DEFAULT_
     return parameters_[param_name]
 
 
-def Load_yaml(config_file: Path) -> Any:
+def Load_yaml(config_file: Path) -> YamlValue:
     """Load a YAML file.
 
     Raises:
@@ -105,7 +112,7 @@ def Load_yaml(config_file: Path) -> Any:
         raise ConfigError(f"cannot parse {config_file}: {error_}") from error_
 
 
-def Read_value(config_file: Path, key_path: str) -> Any:
+def Read_value(config_file: Path, key_path: str) -> YamlValue:
     """Return the value at a dotted key path of any YAML file, e.g. ``robot.directory``.
 
     Used for the configuration files that are not ROS 2 parameters files (config/viewer.yaml).
@@ -113,7 +120,7 @@ def Read_value(config_file: Path, key_path: str) -> Any:
     Raises:
         ConfigError: If the file is invalid or a key of the path is missing.
     """
-    value_: Any = Load_yaml(config_file)
+    value_: YamlValue = Load_yaml(config_file)
     walked_: list[str] = []
     for key_ in key_path.split("."):
         walked_.append(key_)
@@ -123,7 +130,7 @@ def Read_value(config_file: Path, key_path: str) -> Any:
     return value_
 
 
-def Format_value(value: Any) -> str:
+def Format_value(value: YamlValue) -> str:
     """Format a parameter value as text for shell scripts.
 
     Booleans use the YAML spelling (true/false); lists and mappings use the YAML flow style
