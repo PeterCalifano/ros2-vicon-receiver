@@ -10,17 +10,22 @@ from __future__ import annotations
 
 import re
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import DEFAULT_TIMEOUT_S, NODE_EXECUTABLE, Run_until_output, TcpListener
+from conftest import (
+    DEFAULT_TIMEOUT_S,
+    NODE_EXECUTABLE,
+    STATIC_TF_MESSAGE,
+    ConfigFactory,
+    Run_until_output,
+    TcpListener,
+)
 
 pytestmark = pytest.mark.integration
 
 # Messages printed by the node (see vicon_receiver/src/main.cpp and vicon_receiver_node.cpp)
 FATAL_PREFIX: str = "Invalid node configuration:"
-STATIC_TF_MESSAGE: str = "Published static transform"
 
 
 def Node_command(config: Path | None) -> list[str]:
@@ -53,7 +58,7 @@ def test_node_without_parameters_file_fails(ros_env: dict[str, str]) -> None:
 
 
 def test_node_reports_missing_parameter_by_name(
-    ros_env: dict[str, str], make_config: Callable[..., Path]
+    ros_env: dict[str, str], make_config: ConfigFactory
 ) -> None:
     """A parameter missing from the YAML is named in the error."""
     config_ = make_config(remove=["buffer_size"])
@@ -63,7 +68,7 @@ def test_node_reports_missing_parameter_by_name(
 
 
 def test_node_rejects_integer_list_for_doubles(
-    ros_env: dict[str, str], make_config: Callable[..., Path]
+    ros_env: dict[str, str], make_config: ConfigFactory
 ) -> None:
     """'[0, 0, 0]' in YAML is an integer array and is rejected for map_xyz."""
     config_ = make_config(overrides={"map_xyz": [0, 0, 0]})
@@ -73,7 +78,7 @@ def test_node_rejects_integer_list_for_doubles(
 
 
 def test_node_rejects_wrong_vector_size(
-    ros_env: dict[str, str], make_config: Callable[..., Path]
+    ros_env: dict[str, str], make_config: ConfigFactory
 ) -> None:
     """map_rpy must have exactly three elements."""
     config_ = make_config(overrides={"map_rpy": [0.0, 0.0]})
@@ -83,7 +88,7 @@ def test_node_rejects_wrong_vector_size(
 
 
 def test_node_starts_with_valid_config(
-    ros_env: dict[str, str], make_config: Callable[..., Path], tcp_listener: TcpListener
+    ros_env: dict[str, str], make_config: ConfigFactory, tcp_listener: TcpListener
 ) -> None:
     """With a valid file the node publishes the static transform and tries to connect."""
     config_ = make_config(overrides={"hostname": tcp_listener.host_spec})
@@ -97,7 +102,7 @@ def test_node_starts_with_valid_config(
 
 
 def test_failed_connections_are_paced_and_name_the_sdk_result(
-    ros_env: dict[str, str], make_config: Callable[..., Path]
+    ros_env: dict[str, str], make_config: ConfigFactory
 ) -> None:
     """An unknown host fails at once: attempts follow connect_retry_period_s, with the cause."""
     config_ = make_config(

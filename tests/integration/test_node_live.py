@@ -15,11 +15,10 @@ import subprocess
 import sys
 import textwrap
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import SCRIPTS_DIR, Stop_process_group
+from conftest import SCRIPTS_DIR, ConfigFactory, Stop_process_group
 
 pytestmark = [pytest.mark.integration, pytest.mark.vicon_live]
 
@@ -64,7 +63,7 @@ SUBSCRIBER_SOURCE: str = textwrap.dedent(
 
 
 def test_node_publishes_vicon_frames(
-    ros_env: dict[str, str], make_config: Callable[..., Path], tmp_path: Path
+    ros_env: dict[str, str], make_config: ConfigFactory, tmp_path: Path
 ) -> None:
     """The node streams ViconFrame with subjects, segments and markers, and prints telemetry."""
     live_host_ = os.environ.get("VICON_LIVE_HOST")

@@ -22,7 +22,9 @@ from conftest import (
     REPO_ROOT,
     SCRIPTS_DIR,
     ConfigFactory,
+    Load_default_parameters,
     Tools_env_python,
+    Wait_for_node,
     Wait_or_kill,
 )
 
@@ -54,49 +56,60 @@ def Wait_for_recording(output_dir: Path, timeout_s: float) -> bool:
     return False
 
 
+def Test_namespace() -> str:
+    """Namespace of the topics: the one of the parameters file that record.sh gets."""
+    return str(Load_default_parameters()["namespace"]).lstrip("/")
+
+
 def Read_csv(path: Path) -> list[dict[str, str]]:
     """Rows of a CSV file as dictionaries."""
     with path.open(newline="", encoding="utf-8") as handle_:
         return list(csv.DictReader(handle_))
 
 
-def Record_session(ros_env: dict[str, str], tmp_path: Path, stop_signal: signal.Signals) -> Path:
+def Record_session(ros_env: dict[str, str], output_dir: Path, stop_signal: signal.Signals) -> Path:
     """Record ~4 s of the synthetic stream, stop with a signal and return the session directory."""
     environment_ = dict(ros_env)
     environment_["ROS_DOMAIN_ID"] = TEST_DOMAIN_ID
 
     publisher_ = subprocess.Popen(
-        [sys.executable, str(FIXTURE), "--duration", "40"],
+        [sys.executable, str(FIXTURE), "--duration", "40", "--namespace", Test_namespace()],
         env=environment_,
         stdout=subprocess.DEVNULL,
         start_new_session=True,
     )
     recorder_: subprocess.Popen[str] | None = None
+    log_path_ = output_dir / "record.log"
     try:
-        time.sleep(1.5)
-        recorder_ = subprocess.Popen(
-            [
-                str(SCRIPTS_DIR / "record.sh"),
-                "-c",
-                str(CONFIG_FILE),
-                "-t",
-                "test",
-                "-o",
-                str(tmp_path),
-            ],
-            env=environment_,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            start_new_session=True,
+        assert Wait_for_node("vicon_client", environment_, RECORDING_START_TIMEOUT_S), (
+            "the synthetic publisher did not start"
         )
+        with log_path_.open("w", encoding="utf-8") as log_:
+            recorder_ = subprocess.Popen(
+                [
+                    str(SCRIPTS_DIR / "record.sh"),
+                    "-c",
+                    str(CONFIG_FILE),
+                    "-t",
+                    "test",
+                    "-o",
+                    str(output_dir),
+                ],
+                env=environment_,
+                stdout=log_,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
         # Stop only once the recorder is recording: a stop during its start-up leaves no bag
-        assert Wait_for_recording(tmp_path, RECORDING_START_TIMEOUT_S), "the recorder did not start"
+        assert Wait_for_recording(output_dir, RECORDING_START_TIMEOUT_S), (
+            "the recorder did not start: " + log_path_.read_text(encoding="utf-8")
+        )
         time.sleep(RECORDING_DURATION_S)
         # The signal reaches the whole group, as Ctrl+C or a closed terminal do
         os.killpg(recorder_.pid, stop_signal)
-        output_, _ = recorder_.communicate(timeout=60)
-        assert recorder_.returncode == 0, output_
+        recorder_.wait(timeout=60)
+        assert recorder_.returncode == 0, log_path_.read_text(encoding="utf-8")
     finally:
         # A failed step must not leave the recorder or the publisher running
         if recorder_ is not None and recorder_.poll() is None:
@@ -107,44 +120,25 @@ def Record_session(ros_env: dict[str, str], tmp_path: Path, stop_signal: signal.
             os.killpg(publisher_.pid, signal.SIGTERM)
         Wait_or_kill(publisher_, 30)
 
-    sessions_ = [path_ for path_ in tmp_path.iterdir() if path_.is_dir()]
-    assert len(sessions_) == 1, output_
+    sessions_ = [path_ for path_ in output_dir.iterdir() if path_.is_dir()]
+    assert len(sessions_) == 1, log_path_.read_text(encoding="utf-8")
     return sessions_[0]
 
 
-@pytest.fixture
-def recorded_session(ros_env: dict[str, str], tmp_path: Path) -> Path:
-    """Session stopped with Ctrl+C."""
-    return Record_session(ros_env, tmp_path, signal.SIGINT)
+@pytest.fixture(scope="module")
+def recorded_session(ros_env: dict[str, str], tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Session stopped with Ctrl+C, shared by the tests of this module."""
+    return Record_session(ros_env, tmp_path_factory.mktemp("sessions"), signal.SIGINT)
 
 
-def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> None:
-    """MCAP session with metadata, then CSV and HDF5 exports with the injected pattern."""
-    session_ = recorded_session
-    assert session_.name.endswith("_test")
-    assert list((session_ / "bag").glob("*.mcap")), "no MCAP file"
-    assert (session_ / "config" / "vicon_client.yaml").is_file()
-    # The mount file named by the viewer config
-    assert (session_ / "config" / "g1_mount.yaml").is_file()
-    assert "Topic: /vicon/frame" in (session_ / "bag_info.txt").read_text(encoding="utf-8")
-
-    metadata_ = yaml.safe_load((session_ / "meta.yaml").read_text(encoding="utf-8"))
-    assert metadata_["storage"] == "mcap"
-    assert metadata_["tag"] == "test"
-    assert "stop_utc" in metadata_
-    assert "clock_source" in metadata_
-
-    # Nothing is exported unless asked: no exports/ yet
-    assert not (session_ / "exports").exists()
-
-    # export.sh runs in the conda environment of environment.yml (h5py, rosbag2 through ROS)
+@pytest.fixture(scope="module")
+def exported_session(recorded_session: Path, ros_env: dict[str, str]) -> Path:
+    """The recorded session after export.sh to CSV and HDF5 (needs the conda environment)."""
+    assert not (recorded_session / "exports").exists(), "nothing is exported unless asked"
     if not Tools_env_python():
-        pytest.skip(
-            "conda environment of environment.yml missing (scripts/build.sh): export untested"
-        )
-
+        pytest.skip("conda environment of environment.yml missing (scripts/build.sh)")
     export_ = subprocess.run(
-        [str(SCRIPTS_DIR / "export.sh"), str(session_), "--format", "csv,hdf5"],
+        [str(SCRIPTS_DIR / "export.sh"), str(recorded_session), "--format", "csv,hdf5"],
         env=ros_env,
         capture_output=True,
         text=True,
@@ -152,7 +146,30 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
         check=False,
     )
     assert export_.returncode == 0, export_.stdout + export_.stderr
-    exports_ = session_ / "exports"
+    return recorded_session
+
+
+def test_session_has_the_bag_the_configs_and_the_metadata(recorded_session: Path) -> None:
+    """MCAP bag of the frame topic, copies of the configs, metadata."""
+    session_ = recorded_session
+    assert session_.name.endswith("_test")
+    assert list((session_ / "bag").glob("*.mcap")), "no MCAP file"
+    assert (session_ / "config" / "vicon_client.yaml").is_file()
+    # The mount file named by the viewer config
+    assert (session_ / "config" / "g1_mount.yaml").is_file()
+    bag_info_ = (session_ / "bag_info.txt").read_text(encoding="utf-8")
+    assert f"Topic: /{Test_namespace()}/frame" in bag_info_
+
+    metadata_ = yaml.safe_load((session_ / "meta.yaml").read_text(encoding="utf-8"))
+    assert metadata_["storage"] == "mcap"
+    assert metadata_["tag"] == "test"
+    assert "stop_utc" in metadata_
+    assert "clock_source" in metadata_
+
+
+def test_csv_export_has_the_injected_pattern(exported_session: Path) -> None:
+    """Frames, poses and markers as the synthetic publisher sent them."""
+    exports_ = exported_session / "exports"
 
     # Frames: increasing numbers, the injected gaps (every 3 s) reported with their size
     frames_ = Read_csv(exports_ / "frames.csv")
@@ -180,8 +197,13 @@ def test_record_and_export(recorded_session: Path, ros_env: dict[str, str]) -> N
     visible_counts_ = {int(row_["camera_count"]) for row_ in markers_ if row_["occluded"] == "0"}
     assert visible_counts_ == {3, 4, 5}
 
-    # HDF5: the same frames, arrays aligned on the frame index
+
+def test_hdf5_export_is_aligned_with_the_csv(exported_session: Path) -> None:
+    """The same frames as the CSV, in arrays aligned on the frame index."""
     h5py_ = pytest.importorskip("h5py")
+    exports_ = exported_session / "exports"
+    frames_ = Read_csv(exports_ / "frames.csv")
+    poses_ = Read_csv(exports_ / "poses_test_body_test_body.csv")
     with h5py_.File(exports_ / "session.h5", "r") as file_:
         count_ = len(file_["frames/frame_number"])
         assert count_ == len(frames_)
@@ -204,24 +226,15 @@ def test_record_stops_before_creating_a_session_on_a_missing_entry(
     config_ = make_config(remove=["stream_mode"])
     output_dir_ = tmp_path / "sessions"
 
-    publisher_ = subprocess.Popen(
-        [sys.executable, str(FIXTURE), "--duration", "6"],
+    # The entries are read before anything else: no node has to be running
+    result_ = subprocess.run(
+        [str(SCRIPTS_DIR / "record.sh"), "-c", str(config_), "-o", str(output_dir_)],
         env=environment_,
-        stdout=subprocess.DEVNULL,
-        start_new_session=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
-    try:
-        time.sleep(1.5)
-        result_ = subprocess.run(
-            [str(SCRIPTS_DIR / "record.sh"), "-c", str(config_), "-o", str(output_dir_)],
-            env=environment_,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-    finally:
-        Wait_or_kill(publisher_, 30)
 
     assert result_.returncode != 0, result_.stdout
     assert "stream_mode" in result_.stderr

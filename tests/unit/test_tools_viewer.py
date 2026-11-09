@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from conftest import REPO_ROOT, Subject_at_origin, ViewerScene
+from conftest import VIEWER_CONFIG, Subject_at_origin, ViewerScene, Write_viewer_config
 from vicon_receiver_tools.config import ConfigError
 from vicon_receiver_tools.viewer import (
     CAMERA_OFFSET_M,
@@ -37,8 +37,6 @@ from vicon_receiver_tools.viewer_config import (
     Load_viewer_config,
     Save_mount,
 )
-
-VIEWER_CONFIG: Path = REPO_ROOT / "config" / "viewer.yaml"
 
 
 def Make_message(occluded: bool = False) -> SimpleNamespace:
@@ -213,31 +211,25 @@ def test_repository_viewer_config_is_valid() -> None:
 
 def test_viewer_config_missing_entry(tmp_path: Path) -> None:
     """A missing entry is reported by its path, not replaced by a default."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace("  port: 8080\n", "")
-    config_ = tmp_path / "viewer.yaml"
-    config_.write_text(text_, encoding="utf-8")
+    config_ = Write_viewer_config(tmp_path, lambda document_: document_["viewer"].pop("port"))
     with pytest.raises(ConfigError, match=r"viewer\.port not found"):
         Load_viewer_config(config_)
 
 
 def test_viewer_config_rejects_non_positive_rate(tmp_path: Path) -> None:
     """Rates and sizes must be positive."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
-        "update_rate_hz: 30.0", "update_rate_hz: 0.0"
+    config_ = Write_viewer_config(
+        tmp_path, lambda document_: document_["viewer"].update(update_rate_hz=0.0)
     )
-    config_ = tmp_path / "viewer.yaml"
-    config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"viewer\.update_rate_hz must be > 0"):
         Load_viewer_config(config_)
 
 
 def test_viewer_config_rejects_negative_surface_offset(tmp_path: Path) -> None:
     """Markers cannot sit below the surface of the meshes."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
-        "surface_offset_m: 0.010", "surface_offset_m: -0.01"
+    config_ = Write_viewer_config(
+        tmp_path, lambda document_: document_["mount_estimate"].update(surface_offset_m=-0.01)
     )
-    config_ = tmp_path / "viewer.yaml"
-    config_.write_text(text_, encoding="utf-8")
     with pytest.raises(ConfigError, match=r"surface_offset_m must be >= 0"):
         Load_viewer_config(config_)
 
@@ -304,11 +296,12 @@ def test_viewer_config_has_the_set_up_marker_pairs() -> None:
 
 def test_viewer_config_rejects_a_pair_of_one_marker(tmp_path: Path) -> None:
     """Left and right must be two different markers."""
-    text_ = VIEWER_CONFIG.read_text(encoding="utf-8").replace(
-        'right: "g1-unitree-torso-cam7"', 'right: "g1-unitree-torso-cam6"'
-    )
-    config_ = tmp_path / "viewer.yaml"
-    config_.write_text(text_, encoding="utf-8")
+
+    def _Same_marker_twice(document_: dict) -> None:
+        pair_ = document_["mount_estimate"]["lateral_marker_pairs"][0]
+        pair_["right"] = pair_["left"]
+
+    config_ = Write_viewer_config(tmp_path, _Same_marker_twice)
     with pytest.raises(ConfigError, match="left and right are the same marker"):
         Load_viewer_config(config_)
 

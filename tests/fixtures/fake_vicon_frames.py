@@ -103,11 +103,12 @@ def Main(argv: list[str]) -> int:
     parser_ = argparse.ArgumentParser(description="Publish synthetic ViconFrame messages.")
     parser_.add_argument("--duration", type=float, required=True, help="seconds to publish")
     parser_.add_argument("--rate", type=float, default=100.0, help="frames per second")
+    parser_.add_argument("--namespace", required=True, help="topic is <namespace>/frame")
     arguments_ = parser_.parse_args(argv)
 
     rclpy.init()
     node_ = rclpy.create_node("vicon_client")
-    publisher_ = node_.create_publisher(ViconFrame, "/vicon/frame", 100)
+    publisher_ = node_.create_publisher(ViconFrame, f"/{arguments_.namespace}/frame", 100)
 
     period_s_ = 1.0 / arguments_.rate
     start_ = time.monotonic()

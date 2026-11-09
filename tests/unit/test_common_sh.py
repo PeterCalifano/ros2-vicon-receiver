@@ -7,12 +7,11 @@ without a Vicon system. One test uses a real local TCP listener for the success 
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import yaml
-from conftest import REPO_ROOT, Load_default_parameters, ShellRunner, TcpListener
+from conftest import REPO_ROOT, ConfigFactory, Load_default_parameters, ShellRunner, TcpListener
 
 # Canned output of "ip -o -4 addr show" for a machine on the Vicon network (eth9) and an
 # office network (eth4)
@@ -104,9 +103,7 @@ def test_split_host_port_rejects_invalid_specs(
 # -------------------------------------------------------------------------------------------------
 # read_config_param
 # -------------------------------------------------------------------------------------------------
-def test_read_config_param_reads_hostname(
-    shell: ShellRunner, make_config: Callable[..., Path]
-) -> None:
+def test_read_config_param_reads_hostname(shell: ShellRunner, make_config: ConfigFactory) -> None:
     """The hostname is read from vicon_client.ros__parameters."""
     config_ = make_config(overrides={"hostname": "10.1.2.3:900"})
     result_ = shell.run_common(f'read_config_param "{config_}" hostname')
@@ -121,9 +118,7 @@ def test_read_config_param_reads_repository_config(shell: ShellRunner) -> None:
     assert result_.stdout.strip() == Load_default_parameters()["hostname"]
 
 
-def test_read_config_param_missing_key(
-    shell: ShellRunner, make_config: Callable[..., Path]
-) -> None:
+def test_read_config_param_missing_key(shell: ShellRunner, make_config: ConfigFactory) -> None:
     """A missing parameter is reported with its full path in the file."""
     config_ = make_config(remove=["hostname"])
     result_ = shell.run_common(f'value=""; value="$(read_config_param "{config_}" hostname)"')

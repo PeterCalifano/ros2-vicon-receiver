@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import CONFIG_FILE, Load_default_parameters
+from conftest import CONFIG_FILE, ConfigFactory, Load_default_parameters
 from vicon_receiver_tools.config import (
     ConfigError,
     Format_value,
@@ -49,16 +48,23 @@ def test_repository_config_has_all_node_parameters() -> None:
     assert set(parameters_) == expected_names_
 
 
-def test_read_parameter_returns_typed_values(make_config: Callable[..., Path]) -> None:
+def test_read_parameter_returns_typed_values(make_config: ConfigFactory) -> None:
     """Values keep their YAML types (the node rejects e.g. integers for doubles)."""
-    config_ = make_config(overrides={"hostname": "10.1.2.3:900", "map_xyz": [1.0, 2.0, 3.0]})
+    config_ = make_config(
+        overrides={
+            "hostname": "10.1.2.3:900",
+            "buffer_size": 123,
+            "map_xyz": [1.0, 2.0, 3.0],
+            "map_rpy_in_degrees": False,
+        }
+    )
     assert Read_parameter(config_, "hostname") == "10.1.2.3:900"
-    assert Read_parameter(config_, "buffer_size") == 200
+    assert Read_parameter(config_, "buffer_size") == 123
     assert Read_parameter(config_, "map_xyz") == [1.0, 2.0, 3.0]
     assert Read_parameter(config_, "map_rpy_in_degrees") is False
 
 
-def test_read_parameter_missing_key(make_config: Callable[..., Path]) -> None:
+def test_read_parameter_missing_key(make_config: ConfigFactory) -> None:
     """A missing parameter is reported with its full path in the file."""
     config_ = make_config(remove=["hostname"])
     with pytest.raises(ConfigError, match=r"vicon_client\.ros__parameters\.hostname not found"):
@@ -136,9 +142,7 @@ def test_main_prints_value(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured_.err == ""
 
 
-def test_main_reports_error(
-    capsys: pytest.CaptureFixture[str], make_config: Callable[..., Path]
-) -> None:
+def test_main_reports_error(capsys: pytest.CaptureFixture[str], make_config: ConfigFactory) -> None:
     """On error the command prints only the message on stderr and exits with 1."""
     config_ = make_config(remove=["namespace"])
     exit_code_ = Main([str(config_), "namespace"])

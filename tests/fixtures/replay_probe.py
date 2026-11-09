@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 import rclpy
-from builtin_interfaces.msg import Time
+from fake_vicon_frames import To_time
 
 from vicon_receiver_msgs.msg import MarkerState, SegmentState, SubjectState, ViconFrame
 
@@ -27,12 +27,6 @@ def Ros_name(name: str) -> str:
     """ROS name token of a Vicon name (as vicon_receiver::to_ros_name_token)."""
     token_ = re.sub(r"[^A-Za-z0-9_]", "_", name)
     return token_ if token_[:1].isalpha() else "vicon" + token_
-
-
-def To_time(seconds: float) -> Time:
-    """builtin_interfaces/Time from seconds."""
-    whole_ = int(seconds)
-    return Time(sec=whole_, nanosec=min(round((seconds - whole_) * 1e9), 999_999_999))
 
 
 def Make_frame(frame: dict[str, object]) -> ViconFrame:

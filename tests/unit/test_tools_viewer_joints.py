@@ -8,10 +8,10 @@ yourdfpy); it is skipped otherwise. The adapter is tested without ROS or unitree
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import g1_joint_states
 import numpy as np
 import pytest
 import yaml
@@ -26,10 +26,6 @@ from vicon_receiver_tools.viewer import (
 from vicon_receiver_tools.viewer_config import Load_viewer_config
 
 ADAPTER_CONFIG: Path = REPO_ROOT / "config" / "g1_joint_states.yaml"
-
-# The adapter is a script: import it as a module
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-import g1_joint_states  # noqa: E402
 
 
 def Joint_state(names: list[str], positions: list[float]) -> SimpleNamespace:

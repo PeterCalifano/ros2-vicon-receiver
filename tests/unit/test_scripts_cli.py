@@ -10,21 +10,16 @@ import re
 from pathlib import Path
 
 import pytest
-from conftest import ShellRunner
+from conftest import SCRIPTS_DIR, ShellRunner
 
 # Scripts with a command-line interface, relative to scripts/ (lib/*.sh are sourced, not executed;
 # source_ros_env.sh is sourced and has no options)
 SCRIPT_PATHS: list[str] = [
-    "build.sh",
-    "launch.sh",
-    "probe.sh",
-    "format.sh",
-    "start_visualizer.sh",
-    "estimate_mount.py",
-    "g1_joint_states.py",
-    "fetch_g1_model.sh",
-    "record.sh",
-    "export.sh",
+    *sorted(
+        path_.name
+        for path_ in [*SCRIPTS_DIR.glob("*.sh"), *SCRIPTS_DIR.glob("*.py")]
+        if path_.name != "source_ros_env.sh"
+    ),
     "../tests/run_tests.sh",
 ]
 

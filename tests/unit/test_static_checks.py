@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import REPO_ROOT, SCRIPTS_DIR, ShellRunner
+from conftest import DEFAULT_TIMEOUT_S, REPO_ROOT, SCRIPTS_DIR, ShellRunner
 
 ENVIRONMENT_BIN_DIR: Path = Path(sys.prefix) / "bin"
 
@@ -46,6 +46,7 @@ def test_shell_sources_pass_shellcheck() -> None:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        timeout=DEFAULT_TIMEOUT_S,
         check=False,
     )
     assert result_.returncode == 0, result_.stdout + result_.stderr
@@ -59,7 +60,12 @@ def test_python_sources_pass_ruff(arguments: list[str]) -> None:
         pytest.skip("ruff not installed (it is in the conda environment of environment.yml)")
 
     result_ = subprocess.run(
-        [ruff_, *arguments, "."], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+        [ruff_, *arguments, "."],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT_S,
+        check=False,
     )
     assert result_.returncode == 0, result_.stdout + result_.stderr
 

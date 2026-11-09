@@ -38,10 +38,23 @@ TOOLS_PYTHON_DIR: Path = REPO_ROOT / "vicon_receiver_tools"
 if str(TOOLS_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_PYTHON_DIR))
 SCRIPTS_DIR: Path = REPO_ROOT / "scripts"
+# The adapter scripts are imported as modules by their unit tests
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 COMMON_SH: Path = SCRIPTS_DIR / "lib" / "common.sh"
 ROS_ENV_SH: Path = SCRIPTS_DIR / "lib" / "ros_env.sh"
 CONFIG_FILE: Path = REPO_ROOT / "config" / "vicon_client.yaml"
 FAKE_BIN_DIR: Path = REPO_ROOT / "tests" / "fixtures" / "fake_bin"
+
+
+# Default timeout of a single shell/script invocation [s]
+DEFAULT_TIMEOUT_S: float = 30.0
+
+# Address reserved for documentation (RFC 5737): nothing answers there
+UNREACHABLE_ADDRESS: str = "192.0.2.1"
+
+# Printed by the node once it has started
+STATIC_TF_MESSAGE: str = "Published static transform"
 
 
 def Ros_env_variable(name: str) -> str:
@@ -51,6 +64,7 @@ def Ros_env_variable(name: str) -> str:
         ["bash", "-c", f'source "{ROS_ENV_SH}"; printf "%s" "${{{name}}}"'],
         capture_output=True,
         text=True,
+        timeout=DEFAULT_TIMEOUT_S,
         check=True,
     ).stdout
 
@@ -61,6 +75,7 @@ def Tools_env_python() -> str:
         ["bash", "-c", f'source "{COMMON_SH}"; tools_env_bin python'],
         capture_output=True,
         text=True,
+        timeout=DEFAULT_TIMEOUT_S,
         check=False,
     ).stdout.strip()
 
@@ -75,9 +90,6 @@ PROBE_EXECUTABLE: Path = NODE_EXECUTABLE.with_name("vicon_probe")
 # Top-level key and parameters section of the parameters file
 NODE_NAME: str = "vicon_client"
 PARAMETERS_KEY: str = "ros__parameters"
-
-# Default timeout of a single shell/script invocation [s]
-DEFAULT_TIMEOUT_S: float = 30.0
 
 
 # -------------------------------------------------------------------------------------------------
@@ -263,6 +275,24 @@ def jointed_robot_scene(tmp_path: Path) -> Iterator[ViewerScene]:
 # -------------------------------------------------------------------------------------------------
 # Child processes
 # -------------------------------------------------------------------------------------------------
+def Wait_for_node(name: str, env: dict[str, str], timeout_s: float) -> bool:
+    """Wait until a ROS 2 node is visible; return whether it appeared in time."""
+    deadline_ = time.monotonic() + timeout_s
+    while time.monotonic() < deadline_:
+        result_ = subprocess.run(
+            ["ros2", "node", "list", "--no-daemon"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_TIMEOUT_S,
+            check=False,
+        )
+        if f"/{name}" in result_.stdout.split():
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def Wait_or_kill(process: subprocess.Popen, timeout_s: float) -> None:
     """Wait for a child process; past timeout_s, kill it with its process group (if it leads one).
 

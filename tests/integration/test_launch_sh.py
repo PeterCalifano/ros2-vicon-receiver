@@ -6,23 +6,25 @@ of the TEST-NET-1 documentation range, which is never assigned (unreachable case
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-
 import pytest
-from conftest import SCRIPTS_DIR, Run_until_output, ShellRunner, TcpListener
+from conftest import (
+    SCRIPTS_DIR,
+    STATIC_TF_MESSAGE,
+    UNREACHABLE_ADDRESS,
+    ConfigFactory,
+    Run_until_output,
+    ShellRunner,
+    TcpListener,
+)
 
 pytestmark = pytest.mark.integration
 
-# RFC 5737 documentation address: guaranteed not to host a Vicon server
-UNREACHABLE_ADDRESS: str = "192.0.2.1"
 
 STARTING_MESSAGE: str = "Starting vicon_client"
-STATIC_TF_MESSAGE: str = "Published static transform"
 
 
 def test_launch_starts_node_when_server_reachable(
-    ros_env: dict[str, str], make_config: Callable[..., Path], tcp_listener: TcpListener
+    ros_env: dict[str, str], make_config: ConfigFactory, tcp_listener: TcpListener
 ) -> None:
     """The check passes against a listening port and the node starts with the given config."""
     config_ = make_config(overrides={"hostname": tcp_listener.host_spec})
@@ -35,7 +37,7 @@ def test_launch_starts_node_when_server_reachable(
 
 
 def test_launch_stops_when_server_unreachable(
-    ros_shell: ShellRunner, make_config: Callable[..., Path]
+    ros_shell: ShellRunner, make_config: ConfigFactory
 ) -> None:
     """An unreachable server stops launch.sh with an error, and the node is not started."""
     config_ = make_config(overrides={"hostname": UNREACHABLE_ADDRESS})
@@ -51,7 +53,7 @@ def test_launch_stops_when_server_unreachable(
 
 
 def test_launch_no_check_starts_node_anyway(
-    ros_env: dict[str, str], make_config: Callable[..., Path]
+    ros_env: dict[str, str], make_config: ConfigFactory
 ) -> None:
     """--no-check skips the gate: the node starts even if the server is unreachable."""
     config_ = make_config(overrides={"hostname": UNREACHABLE_ADDRESS})

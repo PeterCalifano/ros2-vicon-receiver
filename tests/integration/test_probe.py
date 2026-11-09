@@ -20,6 +20,7 @@ import pytest
 from conftest import (
     DEFAULT_TIMEOUT_S,
     PROBE_EXECUTABLE,
+    UNREACHABLE_ADDRESS,
     ConfigFactory,
     Load_default_parameters,
     ShellRunner,
@@ -28,8 +29,6 @@ from conftest import (
 
 pytestmark = pytest.mark.integration
 
-# RFC 5737 documentation address: guaranteed not to host a Vicon server
-UNREACHABLE_ADDRESS: str = "192.0.2.1"
 
 # Exit codes of vicon_probe (see vicon_receiver/include/vicon_receiver/probe/vicon_probe.hpp)
 EXIT_INVALID_ARGUMENTS: int = 1
@@ -132,6 +131,7 @@ def test_probe_non_vicon_server_fails_with_sdk_result(
     assert "frames" not in recording_
 
 
+@pytest.mark.usefixtures("ros_env")
 def test_probe_sh_stops_when_server_unreachable(shell: ShellRunner, tmp_path: Path) -> None:
     """probe.sh applies the same reachability check as launch.sh and does not run the probe."""
     output_ = tmp_path / "recording.json"
@@ -147,6 +147,7 @@ def test_probe_sh_stops_when_server_unreachable(shell: ShellRunner, tmp_path: Pa
     assert not output_.exists()
 
 
+@pytest.mark.usefixtures("ros_env")
 def test_probe_sh_passes_options_to_probe(
     shell: ShellRunner, tcp_listener: TcpListener, tmp_path: Path
 ) -> None:
@@ -166,6 +167,7 @@ def test_probe_sh_passes_options_to_probe(
     assert recording_["connection"]["timeout_ms"] == 300
 
 
+@pytest.mark.usefixtures("ros_env")
 def test_probe_sh_stream_mode_option(
     shell: ShellRunner, tcp_listener: TcpListener, tmp_path: Path
 ) -> None:
@@ -198,6 +200,7 @@ def test_probe_requires_stream_mode(ros_env: dict[str, str]) -> None:
     assert "--stream-mode is required" in result_.stderr
 
 
+@pytest.mark.usefixtures("ros_env")
 def test_probe_sh_reads_host_from_config(
     shell: ShellRunner, make_config: ConfigFactory, tcp_listener: TcpListener, tmp_path: Path
 ) -> None:
