@@ -1,4 +1,4 @@
-"""Static checks of the repository sources: shell scripts (shellcheck) and C++ formatting.
+"""Static checks of the repository sources: shellcheck, ruff, clang-format and clang-tidy.
 
 Each check is skipped when its tool is not installed. The tools are looked up in the Python
 environment running the tests (the conda environment of environment.yml pins them), then on PATH.
@@ -6,15 +6,21 @@ environment running the tests (the conda environment of environment.yml pins the
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from conftest import DEFAULT_TIMEOUT_S, REPO_ROOT, SCRIPTS_DIR, ShellRunner
 
 ENVIRONMENT_BIN_DIR: Path = Path(sys.prefix) / "bin"
+
+# clang-tidy works on the compile commands of the last build of the package
+COMPILE_DATABASE_DIR: Path = REPO_ROOT / "build" / "vicon_receiver"
+CLANG_TIDY_TIMEOUT_S: float = 600.0
 
 
 def Find_tool(name: str) -> str | None:
@@ -78,3 +84,50 @@ def test_cpp_sources_are_formatted(shell: ShellRunner) -> None:
 
     result_ = shell.run_script("format.sh", ["--check"], extra_env={"CLANG_FORMAT": clang_format_})
     assert result_.returncode == 0, result_.stdout + result_.stderr
+
+
+def test_cpp_sources_pass_clang_tidy() -> None:
+    """The C++ sources of the node and the probe pass .clang-tidy (vendored headers excluded)."""
+    clang_tidy_ = Find_tool("clang-tidy")
+    if clang_tidy_ is None:
+        pytest.skip("clang-tidy not installed (it is in the conda environment of environment.yml)")
+    if not (COMPILE_DATABASE_DIR / "compile_commands.json").is_file():
+        pytest.skip(f"no compile commands in {COMPILE_DATABASE_DIR}: tests/run_tests.sh")
+
+    # A library preloaded by the user's shell has no place in the analysis
+    environment_ = {key_: value_ for key_, value_ in os.environ.items() if key_ != "LD_PRELOAD"}
+    # The conda package has no Clang builtin headers (stddef.h): use those of the build compiler
+    compiler_headers_ = subprocess.run(
+        ["gcc", "-print-file-name=include"],
+        env=environment_,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TIMEOUT_S,
+        check=True,
+    ).stdout.strip()
+
+    def _Findings(source: Path) -> str:
+        """Report of clang-tidy on one source, empty if it passes."""
+        result_ = subprocess.run(
+            [
+                clang_tidy_,
+                "-p",
+                str(COMPILE_DATABASE_DIR),
+                "--quiet",
+                f"--extra-arg=-isystem{compiler_headers_}",
+                str(source),
+            ],
+            cwd=REPO_ROOT,
+            env=environment_,
+            capture_output=True,
+            text=True,
+            timeout=CLANG_TIDY_TIMEOUT_S,
+            check=False,
+        )
+        return "" if result_.returncode == 0 else result_.stdout + result_.stderr
+
+    sources_ = sorted((REPO_ROOT / "vicon_receiver" / "src").rglob("*.cpp"))
+    assert sources_, "no C++ source found"
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool_:
+        findings_ = [report_ for report_ in pool_.map(_Findings, sources_) if report_]
+    assert not findings_, "\n".join(findings_)

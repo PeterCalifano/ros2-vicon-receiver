@@ -130,11 +130,13 @@ namespace vicon_probe
                 // are valid in JSON strings and copied unchanged
                 if (static_cast<unsigned char>(character) < 0x20)
                 {
+                    // Result unused: 6 characters always fit in the buffer
                     std::array<char, 8> buffer{};
-                    std::snprintf(buffer.data(),
-                                  buffer.size(),
-                                  "\\u%04x",
-                                  static_cast<unsigned int>(static_cast<unsigned char>(character)));
+                    static_cast<void>(std::snprintf(
+                        buffer.data(),
+                        buffer.size(),
+                        "\\u%04x",
+                        static_cast<unsigned int>(static_cast<unsigned char>(character))));
                     escaped += buffer.data();
                 }
                 else

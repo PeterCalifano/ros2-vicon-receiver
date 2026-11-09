@@ -478,7 +478,7 @@ bool ViconReceiverNode::get_frame()
             // No reconnection: the caller stops the node
             return false;
         }
-        else if (frame_result.Result != Result::NoFrame)
+        if (frame_result.Result != Result::NoFrame)
         {
             // NoFrame means that no frame is available (right after connecting, or Tracker
             // not streaming): the status line reports it

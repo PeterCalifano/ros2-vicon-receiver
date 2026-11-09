@@ -51,7 +51,7 @@ tests/
     test_common_sh.py                  scripts/lib/common.sh functions
     test_ros_env_sh.py                 scripts/lib/ros_env.sh (setup files, WSL mirrored networking detection/profile), source_ros_env.sh
     test_scripts_cli.py                command line and usage layout of scripts/* and tests/run_tests.sh
-    test_static_checks.py              shellcheck, clang-format and ruff (skipped if not installed)
+    test_static_checks.py              shellcheck, clang-format, clang-tidy, ruff (skipped if not installed)
     test_tools_config.py               vicon_receiver_tools.config (parameters file access)
     test_tools_network.py              vicon_receiver_tools.network (local subnet report)
     test_tools_viewer.py               viewer data views, colours, trails, telemetry, frame buffer, configs, hiding of removed subjects (viser)
@@ -96,7 +96,7 @@ VICON_LIVE_HOST=10.250.223.40 python3 -m pytest tests -m vicon_live
 ## Developer tools
 
 `tests/run_tests.sh` runs pytest in the conda environment of `environment.yml`
-(`conda env create -f environment.yml`), which also pins `shellcheck` and `clang-format` for the
+(`conda env create -f environment.yml`), which also pins `shellcheck`, `clang-format` and `clang-tidy` for the
 static checks. Without it, the system Python runs the tests that do not need the environment, with
 the tools found on `PATH`. Don't build with the environment activated: colcon needs the system
 Python of ROS 2.

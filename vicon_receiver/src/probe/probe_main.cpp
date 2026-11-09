@@ -72,8 +72,9 @@ int main(int argc, char **argv)
         json_stream = &json_file;
     }
 
-    std::signal(SIGINT, handle_stop_signal);
-    std::signal(SIGTERM, handle_stop_signal);
+    // Result unused: signal() fails only on an invalid signal number
+    static_cast<void>(std::signal(SIGINT, handle_stop_signal));
+    static_cast<void>(std::signal(SIGTERM, handle_stop_signal));
 
     vicon_probe::ViconProbe probe(options, std::cout, *json_stream);
     const ExitCode exit_code = probe.run(g_stop_requested);
