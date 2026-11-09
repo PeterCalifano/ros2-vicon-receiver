@@ -1,11 +1,32 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.18)
 project(vicon_receiver)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(VICON_RECEIVER_WERROR "Treat compiler warnings as errors" OFF)
+option(VICON_RECEIVER_SANITIZERS "Build with AddressSanitizer and UBSan" OFF)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
+  if(VICON_RECEIVER_WERROR)
+    add_compile_options(-Werror)
+  endif()
+endif()
+
+# Stricter warnings for the code of this package (not the tests, whose macros trigger them)
+add_library(vicon_receiver_warnings INTERFACE)
+target_compile_options(vicon_receiver_warnings INTERFACE
+  -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual
+  -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2
+)
+
+# Sanitizers: PUBLIC on the libraries below, so that the executables and tests link them too
+add_library(vicon_receiver_sanitizers INTERFACE)
+if(VICON_RECEIVER_SANITIZERS)
+  target_compile_options(vicon_receiver_sanitizers INTERFACE
+    -fsanitize=address,undefined -fno-omit-frame-pointer -g)
+  target_link_options(vicon_receiver_sanitizers INTERFACE -fsanitize=address,undefined)
 endif()
 
 # find dependencies
@@ -104,10 +125,15 @@ add_library(vicon_common STATIC
   src/console_status_line.cpp
 )
 target_include_directories(vicon_common PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_include_directories(vicon_common SYSTEM PUBLIC
   "${VICON_SDK_INCLUDE_DIR}"
   "${VICON_SDK_INCLUDE_DIR}/vicon-datastream-sdk"
+)
+target_link_libraries(vicon_common
+  PUBLIC vicon_receiver_sanitizers
+  PRIVATE vicon_receiver_warnings
 )
 
 ###########################################################
@@ -121,8 +147,7 @@ add_library(vicon_receiver_core STATIC
 
 # Our public headers are needed by every target linking the library
 target_include_directories(vicon_receiver_core PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 # Link dependencies (use imported targets consistently). PUBLIC because the
@@ -132,6 +157,7 @@ target_link_libraries(vicon_receiver_core PUBLIC
   vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::system Boost::thread Boost::chrono Boost::timer
+  PRIVATE vicon_receiver_warnings
 )
 
 ament_target_dependencies(vicon_receiver_core PUBLIC
@@ -148,7 +174,7 @@ ament_target_dependencies(vicon_receiver_core PUBLIC
 add_executable(vicon_client
   src/main.cpp
 )
-target_link_libraries(vicon_client vicon_receiver_core)
+target_link_libraries(vicon_client PRIVATE vicon_receiver_core vicon_receiver_warnings)
 
 ###########################################################
 # --- Probe (no ROS) ---
@@ -161,8 +187,7 @@ add_library(vicon_probe_core STATIC
   src/probe/vicon_probe.cpp
 )
 target_include_directories(vicon_probe_core PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 # The probe does not use Boost itself, but the SDK library needs the vendored
 # Boost thread/chrono libraries and has no runpath: they must be on the link line.
@@ -170,24 +195,30 @@ target_link_libraries(vicon_probe_core PUBLIC
   vicon_common
   ViconDataStreamSDK::ViconDataStreamSDK_CPP
   Boost::thread Boost::chrono
+  PRIVATE vicon_receiver_warnings
 )
 
 add_executable(vicon_probe
   src/probe/probe_main.cpp
 )
-target_link_libraries(vicon_probe vicon_probe_core)
+target_link_libraries(vicon_probe PRIVATE vicon_probe_core vicon_receiver_warnings)
 
-# Runtime search path so the binary finds libs in the install tree
-set_target_properties(vicon_client PROPERTIES
-  INSTALL_RPATH "\$ORIGIN/../lib"
+# Runtime search path so the binaries find the vendored libraries in the install tree
+# (executables in lib/vicon_receiver/, libraries in lib/)
+set_target_properties(vicon_client vicon_probe PROPERTIES
+  INSTALL_RPATH "\$ORIGIN/.."
   BUILD_WITH_INSTALL_RPATH OFF
 )
+# The SDK library has no runpath and needs the vendored Boost: an RPATH also applies to the
+# dependencies of a library, a RUNPATH (the linker's default) only to the executable's own.
+foreach(executable vicon_client vicon_probe)
+  target_link_options(${executable} PRIVATE "LINKER:--disable-new-dtags")
+endforeach()
 
-# --- Install: ship SDK + our headers and node ---
+# --- Install: the vendored libraries, the executables and the launch files ---
 include(GNUInstallDirs)
 
-# Install vendored Boost so your installed node finds the same libs at runtime
-install(DIRECTORY "${BOOST_VENDOR_INCLUDE}/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Install vendored Boost so the installed binaries find the same libs at runtime
 install(FILES
   "${BOOST_SYSTEM_LIB}" "${BOOST_THREAD_LIB}" "${BOOST_CHRONO_LIB}" "${BOOST_TIMER_LIB}"
   DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -195,14 +226,6 @@ install(FILES
 # install the SDK shared lib into install/lib
 install(FILES "${VICON_SDK_LIB}" 
         DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-# install SDK headers into install/include (keeps vendor tree)
-install(DIRECTORY "${VICON_SDK_INCLUDE_DIR}/"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
-# install our public headers (so other pkgs could include vicon_receiver/… if needed)
-install(DIRECTORY include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # install the node, the probe and the launch files
 install(TARGETS vicon_client vicon_probe RUNTIME
