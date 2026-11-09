@@ -10,6 +10,7 @@
 
 #include "vicon_receiver/vicon_receiver_node.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>

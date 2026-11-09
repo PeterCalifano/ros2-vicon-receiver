@@ -178,7 +178,7 @@ class ViconReceiverNode : public rclcpp::Node
     /**
      * @brief Publish one valid segment pose: PoseStamped in world_frame and TF from vicon_frame.
      *
-     * Creates the PoseStamped publisher of the segment on first use (in a separate thread).
+     * Creates the PoseStamped publisher of the segment on first use, in the frame loop.
      */
     void publish_segment_pose(const std::string &subject_name,
                               const vicon_receiver_msgs::msg::SegmentState &segment,

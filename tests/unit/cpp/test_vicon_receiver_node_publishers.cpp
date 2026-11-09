@@ -113,7 +113,7 @@ TEST(ViconReceiverNodePublishers, InvalidNamespaceIsRejectedAtStartup)
     // The namespace parameter is used as given. The constructor creates the ViconFrame
     // publisher on "<namespace>/frame", so an invalid namespace is a configuration error
     // reported at startup (std::invalid_argument, FATAL in main()), instead of a failure in
-    // the publisher thread later on.
+    // the frame loop later on.
     EXPECT_THROW(ViconReceiverNode node(make_options("bad namespace")), std::invalid_argument);
 }
 

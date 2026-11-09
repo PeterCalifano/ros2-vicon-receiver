@@ -325,8 +325,9 @@ def Save_mount(path: Path, mount: LinkPoseInBodyFrame, link: str, subject: str, 
     document_ = {
         "link": link,
         "subject": subject,
-        "xyz_m": [round(value_, 5) for value_ in mount.xyz_m],
-        "rpy_rad": [round(value_, 5) for value_ in mount.rpy_rad],
+        # float(): the sliders of the viewer give NumPy numbers, which yaml.safe_dump refuses
+        "xyz_m": [round(float(value_), 5) for value_ in mount.xyz_m],
+        "rpy_rad": [round(float(value_), 5) for value_ in mount.rpy_rad],
     }
     header_ = f"# Pose of the robot link '{link}' in the Vicon body frame of subject '{subject}'.\n"
     header_ += "".join(f"# {line_}\n" for line_ in note.splitlines())

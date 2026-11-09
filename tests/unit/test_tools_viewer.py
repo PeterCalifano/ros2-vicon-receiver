@@ -341,6 +341,19 @@ def test_objects_of_a_removed_subject_are_hidden(jointed_robot_scene: ViewerScen
     assert viewer_._robot_frame.visible
 
 
+def test_mount_moved_with_the_sliders_can_be_saved(jointed_robot_scene: ViewerScene) -> None:
+    """The "Save mount" button writes what the sliders set (NumPy numbers); it loads back."""
+    viewer_ = jointed_robot_scene.viewer
+    viewer_._sliders["yaw"].value = 90.0
+    viewer_._read_mount_sliders()
+
+    viewer_._save_mount()
+
+    saved_ = Load_mount(viewer_._repo_root / jointed_robot_scene.config.robot.mount_file)
+    assert saved_ is not None
+    assert saved_.rpy_rad[2] == pytest.approx(np.pi / 2.0, abs=1e-5)
+
+
 def test_robot_without_segments_is_hidden(jointed_robot_scene: ViewerScene) -> None:
     """A robot subject still in the stream but with no segment left does not stay frozen."""
     viewer_ = jointed_robot_scene.viewer

@@ -283,7 +283,7 @@ The node has no built-in defaults: a missing parameter, a wrong type (e.g. `0` i
 
 #### Naming scheme
 
-All topics are published under the configured `namespace` (default `vicon`) and follow this structure:
+All topics are published under the configured `namespace` (`vicon` in `config/vicon_client.yaml`) and follow this structure:
 
 ```text
 /<namespace>/<subject_name>/<segment_name>
@@ -342,11 +342,11 @@ map (world frame)
 
 #### Static transform (`map → vicon`)
 
-- Defined via node parameters:
-  - `world_frame`: name of the world frame (default: `map`)
-  - `vicon_frame`: name of the Vicon frame (default: `vicon`)
-  - `map_xyz`: translation from `world_frame` to `vicon_frame` in meters (default: `[0.0, 0.0, 0.0]`)
-  - `map_rpy`: rotation from `world_frame` to `vicon_frame` in Roll-Pitch-Yaw angles (default: `[0.0, 0.0, 0.0]`)
+- Defined via node parameters (all required; values of `config/vicon_client.yaml` in the table above):
+  - `world_frame`: name of the world frame
+  - `vicon_frame`: name of the Vicon frame
+  - `map_xyz`: translation from `world_frame` to `vicon_frame` in meters
+  - `map_rpy`: rotation from `world_frame` to `vicon_frame` in Roll-Pitch-Yaw angles
   - `map_rpy_in_degrees`: `true` if `map_rpy` is given in degrees
 - Fixed frame used in RViz: `world_frame` (recommended) or `vicon_frame`
 

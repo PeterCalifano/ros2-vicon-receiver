@@ -6,11 +6,22 @@ built or launched. The end-to-end behaviour of launch.sh is covered by tests/int
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 from pathlib import Path
 
 import pytest
-from conftest import SCRIPTS_DIR, ShellRunner
+from conftest import REPO_ROOT, ROS_SETUP_FILE, SCRIPTS_DIR, ShellRunner
+
+# Fake python3 for tests/run_tests.sh: every call succeeds, as colcon does when no test ran;
+# "colcon test" leaves a result file if FAKE_RESULT_FILE is set
+FAKE_COLCON_PYTHON: str = """#!/usr/bin/env bash
+if [[ "$*" == "-m colcon test "* && -n "${FAKE_RESULT_FILE:-}" ]]; then
+    mkdir -p "$(dirname "${FAKE_RESULT_FILE}")"
+    touch "${FAKE_RESULT_FILE}"
+fi
+"""
 
 # Scripts with a command-line interface, relative to scripts/ (lib/*.sh are sourced, not executed;
 # source_ros_env.sh is sourced and has no options)
@@ -151,6 +162,37 @@ def test_run_tests_rejects_cpp_and_python_together(shell: ShellRunner) -> None:
     result_ = shell.run_script("../tests/run_tests.sh", ["--cpp", "--python"])
     assert result_.returncode == 1
     assert "--cpp and --python exclude each other." in result_.stderr
+
+
+@pytest.mark.parametrize(("tests_ran", "expected_status"), [(False, 1), (True, 0)])
+def test_run_tests_fails_when_no_cpp_test_ran(
+    shell: ShellRunner, tmp_path: Path, tests_ran: bool, expected_status: int
+) -> None:
+    """colcon says "0 tests" and succeeds if none was compiled: that must not count as a pass."""
+    if not ROS_SETUP_FILE.is_file():
+        pytest.skip(f"ROS 2 not installed ({ROS_SETUP_FILE} missing)")
+
+    # A copy of the scripts: run_tests.sh removes the test results of the workspace it belongs to
+    workspace_ = tmp_path / "workspace"
+    shutil.copytree(SCRIPTS_DIR / "lib", workspace_ / "scripts" / "lib")
+    (workspace_ / "tests").mkdir()
+    run_tests_ = Path(shutil.copy2(REPO_ROOT / "tests" / "run_tests.sh", workspace_ / "tests"))
+
+    # Stands in for "python3 -m colcon ...", which always succeeds
+    fake_bin_ = tmp_path / "bin"
+    fake_bin_.mkdir()
+    (fake_bin_ / "python3").write_text(FAKE_COLCON_PYTHON, encoding="utf-8")
+    (fake_bin_ / "python3").chmod(0o755)
+    environment_ = {"PATH": f"{fake_bin_}{os.pathsep}{os.environ['PATH']}"}
+    if tests_ran:
+        environment_["FAKE_RESULT_FILE"] = str(
+            workspace_ / "build" / "vicon_receiver" / "test_results" / "a" / "a.gtest.xml"
+        )
+
+    result_ = shell.run_script(str(run_tests_), ["--cpp", "--no-build"], extra_env=environment_)
+
+    assert result_.returncode == expected_status, result_.stdout + result_.stderr
+    assert ("No C++ test ran" in result_.stderr) == (not tests_ran)
 
 
 def test_format_missing_clang_format(shell: ShellRunner) -> None:

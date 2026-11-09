@@ -92,7 +92,8 @@ run_cpp_tests()
 {
     # colcon test-result reads every result file of the folder: remove those of earlier runs,
     # which include the results of deleted test targets
-    rm -rf "${REPO_ROOT}/build/vicon_receiver/test_results"
+    local results_dir="${REPO_ROOT}/build/vicon_receiver/test_results"
+    rm -rf "${results_dir}"
 
     # Only vicon_receiver registers tests with colcon; the Python tools are tested by pytest
     info "Running C++ unit tests (colcon test)"
@@ -100,6 +101,13 @@ run_cpp_tests()
         --base-paths "${PACKAGE_DIRS[@]}" \
         --packages-select vicon_receiver \
         --ctest-args --output-on-failure
+
+    # colcon reports 0 tests and success when none ran, e.g. on a workspace from scripts/build.sh,
+    # which does not compile them: without a result file nothing was tested
+    if [[ -z "$(find "${results_dir}" -name '*.xml' -print -quit 2>/dev/null)" ]]; then
+        warn "No C++ test ran: rebuild them (tests/run_tests.sh without --no-build)."
+        return 1
+    fi
 
     # colcon test does not fail on test failures: test-result does
     python3 -m colcon test-result --test-result-base build/vicon_receiver --verbose

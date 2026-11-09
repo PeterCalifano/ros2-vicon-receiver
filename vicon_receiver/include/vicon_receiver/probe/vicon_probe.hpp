@@ -40,8 +40,9 @@ namespace vicon_probe
     /**
      * @brief Collects the SDK calls of one JSON object that did not return Success.
      *
-     * Written as an "errors" member ({"GetObjectQuality": "InvalidSubjectName", ...}) so the
-     * recording shows which data the server does not provide, instead of silently omitting it.
+     * Written as an "errors" member ([{"call": "GetObjectQuality", "result": "InvalidSubjectName"},
+     * ...]) so the recording shows which data the server does not provide, instead of silently
+     * omitting it.
      */
     class FailedSdkCallLog
     {
