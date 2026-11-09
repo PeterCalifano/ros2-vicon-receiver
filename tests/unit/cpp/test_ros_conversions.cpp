@@ -348,8 +348,9 @@ namespace frame_conversion_tests
 
     TEST(FrameConversion, InvalidTimesAreRejected)
     {
-        EXPECT_THROW(vicon_receiver::to_time_msg(-1.0), std::invalid_argument);
-        EXPECT_THROW(vicon_receiver::to_time_msg(std::numeric_limits<double>::quiet_NaN()),
+        EXPECT_THROW(static_cast<void>(vicon_receiver::to_time_msg(-1.0)), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(
+                         vicon_receiver::to_time_msg(std::numeric_limits<double>::quiet_NaN())),
                      std::invalid_argument);
     }
 

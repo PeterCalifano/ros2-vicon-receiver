@@ -9,6 +9,7 @@
 
 #include "vicon_receiver/vicon_receiver_node.hpp"
 
+#include <exception>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -61,15 +62,25 @@ int main(int argc, char **argv)
         // Parameter value rejected by the node's own checks (e.g. wrong vector size)
         return report_parameter_error(error.what());
     }
+    catch (const std::exception &error)
+    {
+        // Anything else that stops the node from starting (e.g. a bad DDS profile)
+        RCLCPP_FATAL(rclcpp::get_logger(ViconReceiverNode::kNodeName),
+                     "Cannot start the node: %s",
+                     error.what());
+        rclcpp::shutdown();
+        return 1;
+    }
 
-    // Connect to the Vicon server
-    node->connect();
-
-    // Retrieve frames while ROS 2 is running; a lost connection stops the node (exit status 2)
-    const int exit_status = node->run_frame_loop();
+    // Connect to the Vicon server; false means that shutdown was requested meanwhile. Otherwise
+    // retrieve frames while ROS 2 is running; a lost connection stops the node (exit status 2).
+    const int exit_status = node->connect() ? node->run_frame_loop() : 0;
 
     // Disconnect from the Vicon server and shut down ROS 2
-    node->disconnect();
+    if (!node->disconnect())
+    {
+        RCLCPP_WARN(node->get_logger(), "The connection to the Vicon server did not close");
+    }
     rclcpp::shutdown();
     return exit_status;
 }

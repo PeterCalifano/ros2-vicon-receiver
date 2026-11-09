@@ -43,10 +43,10 @@ namespace vicon_probe
      * @throws std::invalid_argument with a message for the user if the arguments are invalid
      *         (unknown option, missing or malformed value, missing required option).
      */
-    ProbeOptions parse_probe_options(const std::vector<std::string> &arguments);
+    [[nodiscard]] ProbeOptions parse_probe_options(const std::vector<std::string> &arguments);
 
     /// Usage text of the program.
-    std::string probe_usage(const std::string &program_name);
+    [[nodiscard]] std::string probe_usage(const std::string &program_name);
 } // namespace vicon_probe
 
 #endif // VICON_RECEIVER_PROBE_PROBE_OPTIONS_HPP

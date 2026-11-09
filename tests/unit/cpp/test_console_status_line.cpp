@@ -84,7 +84,7 @@ TEST(ConsoleStatusLine, TakingTheLineStartsANewPeriod)
     ConsoleStatusLine reporter;
     reporter.add_frame(5, 0.03);
     reporter.add_subject("cf0", 1.0, true, {3});
-    reporter.take_line(1.0);
+    static_cast<void>(reporter.take_line(1.0));
 
     // Nothing from the previous period is carried over
     EXPECT_EQ(reporter.take_line(1.0), "no frames in the last 1.0 s");

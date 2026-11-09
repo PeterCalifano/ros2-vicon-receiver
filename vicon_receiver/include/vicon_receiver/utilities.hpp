@@ -35,16 +35,16 @@ namespace vicon_receiver
         void reset();
 
         /// Number of samples.
-        std::uint64_t count() const;
+        [[nodiscard]] std::uint64_t count() const;
 
         /// Smallest sample (NaN if there is none).
-        double minimum() const;
+        [[nodiscard]] double minimum() const;
 
         /// Mean of the samples (NaN if there is none).
-        double mean() const;
+        [[nodiscard]] double mean() const;
 
         /// Largest sample (NaN if there is none).
-        double maximum() const;
+        [[nodiscard]] double maximum() const;
 
       private:
         std::uint64_t count_ = 0;
@@ -58,23 +58,25 @@ namespace vicon_receiver
     // --------------------------------------------------------------------------------------------
 
     /// Name of an SDK call result, e.g. "Success", "ClientConnectionFailed".
-    std::string result_name(ViconDataStreamSDK::CPP::Result::Enum result);
+    [[nodiscard]] std::string result_name(ViconDataStreamSDK::CPP::Result::Enum result);
 
     /// Name of an axis direction, e.g. "Forward".
-    std::string direction_name(ViconDataStreamSDK::CPP::Direction::Enum direction);
+    [[nodiscard]] std::string direction_name(ViconDataStreamSDK::CPP::Direction::Enum direction);
 
     /// Name of the server up-axis orientation, e.g. "ZUp".
-    std::string
+    [[nodiscard]] std::string
     server_orientation_name(ViconDataStreamSDK::CPP::ServerOrientation::Enum orientation);
 
     /// Name of a timecode standard, e.g. "PAL".
-    std::string timecode_standard_name(ViconDataStreamSDK::CPP::TimecodeStandard::Enum standard);
+    [[nodiscard]] std::string
+    timecode_standard_name(ViconDataStreamSDK::CPP::TimecodeStandard::Enum standard);
 
     /// Name of a device type, e.g. "ForcePlate".
-    std::string device_type_name(ViconDataStreamSDK::CPP::DeviceType::Enum device_type);
+    [[nodiscard]] std::string
+    device_type_name(ViconDataStreamSDK::CPP::DeviceType::Enum device_type);
 
     /// Name of a stream mode: "ServerPush", "ClientPull" or "ClientPullPreFetch".
-    std::string stream_mode_name(ViconDataStreamSDK::CPP::StreamMode::Enum mode);
+    [[nodiscard]] std::string stream_mode_name(ViconDataStreamSDK::CPP::StreamMode::Enum mode);
 
     /**
      * @brief Stream mode from its name, as written in the parameters file.
@@ -96,7 +98,7 @@ namespace vicon_receiver
      *
      * @throws std::invalid_argument if the port is not a number in 1..65535.
      */
-    std::uint16_t server_port(const std::string &host_and_port);
+    [[nodiscard]] std::uint16_t server_port(const std::string &host_and_port);
 
     /**
      * @brief Socket inodes of the established TCP connections to a remote port, from the text of
@@ -105,8 +107,8 @@ namespace vicon_receiver
      * @param table        Content of the table (header line first).
      * @param remote_port  Port of the remote end.
      */
-    std::set<std::uint64_t> established_socket_inodes(std::istream &table,
-                                                      std::uint16_t remote_port);
+    [[nodiscard]] std::set<std::uint64_t> established_socket_inodes(std::istream &table,
+                                                                    std::uint16_t remote_port);
 
     /**
      * @brief File descriptors of this process for its established TCP connections to a remote
@@ -114,7 +116,7 @@ namespace vicon_receiver
      *
      * The Vicon SDK opens its connection internally; this is how the node finds it.
      */
-    std::vector<int> find_tcp_sockets_to_port(std::uint16_t remote_port);
+    [[nodiscard]] std::vector<int> find_tcp_sockets_to_port(std::uint16_t remote_port);
 
     /**
      * @brief Enable TCP keepalive on a connected socket so that a dead connection fails.

@@ -78,16 +78,16 @@ namespace vicon_receiver
                       double latency_s);
 
         /// Current estimate of the acquisition time of the reference frame [s].
-        double reference_time_s() const;
+        [[nodiscard]] double reference_time_s() const;
 
         /// Frame number of the current reference frame.
-        std::uint64_t reference_frame() const;
+        [[nodiscard]] std::uint64_t reference_frame() const;
 
         /// Forget the timeline: the next frame starts a new one (e.g. after a stale frame).
         void reset();
 
         /// Number of times the timeline was (re)started, including the first frame.
-        std::uint64_t restarts() const;
+        [[nodiscard]] std::uint64_t restarts() const;
 
       private:
         /// One candidate of the reference time, from one received frame.
@@ -136,16 +136,16 @@ namespace vicon_receiver
         std::uint64_t record(std::uint64_t frame_number);
 
         /// Number of frames recorded so far.
-        std::uint64_t received() const;
+        [[nodiscard]] std::uint64_t received() const;
 
         /// Total number of missed frames.
-        std::uint64_t missed() const;
+        [[nodiscard]] std::uint64_t missed() const;
 
         /// Number of non-increasing frame numbers seen.
-        std::uint64_t discontinuities() const;
+        [[nodiscard]] std::uint64_t discontinuities() const;
 
         /// Last recorded frame number, if any.
-        std::optional<std::uint64_t> last_frame_number() const;
+        [[nodiscard]] std::optional<std::uint64_t> last_frame_number() const;
 
         /// Start a new sequence: the next frame is counted as the first (counters are kept).
         void restart_sequence();
@@ -169,10 +169,10 @@ namespace vicon_receiver
      * @param frame_rate_hz       Frame rate reported by the server [Hz].
      * @param margin_s            Tolerance added to the interval (clock jitter, buffering) [s].
      */
-    bool is_implausible_frame_jump(std::uint64_t frames_missing,
-                                   double receive_interval_s,
-                                   double frame_rate_hz,
-                                   double margin_s);
+    [[nodiscard]] bool is_implausible_frame_jump(std::uint64_t frames_missing,
+                                                 double receive_interval_s,
+                                                 double frame_rate_hz,
+                                                 double margin_s);
 
     /// Frames after connecting during which any frame-number jump is taken as stale leftovers.
     constexpr std::uint64_t kConnectionStartupFrames = 10;
@@ -194,11 +194,11 @@ namespace vicon_receiver
      * @param frames_before_current  Frames received since connecting, before the current one.
      * @param margin_s               Tolerance of the plausibility check [s].
      */
-    bool is_stale_previous_frame(std::uint64_t frames_missing,
-                                 double receive_interval_s,
-                                 double frame_rate_hz,
-                                 std::uint64_t frames_before_current,
-                                 double margin_s);
+    [[nodiscard]] bool is_stale_previous_frame(std::uint64_t frames_missing,
+                                               double receive_interval_s,
+                                               double frame_rate_hz,
+                                               std::uint64_t frames_before_current,
+                                               double margin_s);
 
     // --------------------------------------------------------------------------------------------
     // Frames left over from the server's previous session
@@ -241,10 +241,10 @@ namespace vicon_receiver
         bool accept(std::uint64_t frame_number, double receive_time_s, double frame_rate_hz);
 
         /// Whether the live stream was confirmed since the last restart().
-        bool confirmed() const;
+        [[nodiscard]] bool confirmed() const;
 
         /// Frames held back since the last restart().
-        std::uint64_t rejected() const;
+        [[nodiscard]] std::uint64_t rejected() const;
 
         /// Start over after (re)connecting: frames are held back again until confirmed.
         void restart();
@@ -313,7 +313,7 @@ namespace vicon_receiver
         void restart();
 
         /// Number of measurements started over because the timeline broke.
-        std::uint64_t restarts() const;
+        [[nodiscard]] std::uint64_t restarts() const;
 
       private:
         /// Smallest offset of a block and the frame where it was seen.

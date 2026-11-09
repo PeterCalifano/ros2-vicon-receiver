@@ -63,7 +63,7 @@ namespace vicon_receiver
          *
          * @param elapsed_s  Duration of the period [s] (> 0).
          */
-        std::string take_line(double elapsed_s);
+        [[nodiscard]] std::string take_line(double elapsed_s);
 
         /// Forget the current period (e.g. after reconnecting) and start a new one.
         void reset();

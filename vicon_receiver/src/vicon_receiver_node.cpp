@@ -269,16 +269,16 @@ void ViconReceiverNode::publish_static_transform()
 
     tf_static_broadcaster_->sendTransform(static_tf);
 
-    string msg = "Published static transform from " + world_frame + " to " + vicon_frame;
-    cout << msg << endl;
+    RCLCPP_INFO(this->get_logger(),
+                "Published static transform from %s to %s",
+                world_frame.c_str(),
+                vicon_frame.c_str());
 }
 
 // Connect to the Vicon server
 bool ViconReceiverNode::connect()
 {
-    // Log connection attempt
-    string msg = "Connecting to " + hostname + " ...";
-    cout << msg << endl;
+    RCLCPP_INFO(this->get_logger(), "Connecting to %s ...", hostname.c_str());
 
     int counter = 0;
     // Retry connection until successful
@@ -288,22 +288,22 @@ bool ViconReceiverNode::connect()
         if (result != Result::Success)
         {
             counter++;
-            msg = "Connect failed (" + vicon_receiver::result_name(result) + "), retrying (" +
-                  std::to_string(counter) + ")...";
-            cout << msg << endl;
+            RCLCPP_WARN(this->get_logger(),
+                        "Connect failed (%s), retrying (%d)...",
+                        vicon_receiver::result_name(result).c_str(),
+                        counter);
             // An unknown host or a refused connection fails at once: don't retry at full speed
             std::this_thread::sleep_for(std::chrono::duration<double>(connect_retry_period_s));
         }
     }
     if (!rclcpp::ok())
     {
-        std::cout << "Shutdown requested before connection established." << std::endl;
+        RCLCPP_INFO(this->get_logger(), "Shutdown requested before connection established.");
         return false;
     }
 
-    // Log successful connection
-    msg = "Connection successfully established with " + hostname;
-    cout << msg << endl;
+    RCLCPP_INFO(
+        this->get_logger(), "Connection successfully established with %s", hostname.c_str());
 
     // The server first sends frames left over from its previous session: new timeline
     this->reset_stream_state();
@@ -326,10 +326,9 @@ bool ViconReceiverNode::connect()
     vicon_client.SetStreamMode(stream_mode);
     vicon_client.SetBufferSize(buffer_size);
 
-    // Log initialization completion
-    msg = "Initialization complete (stream mode " + vicon_receiver::stream_mode_name(stream_mode) +
-          ")";
-    cout << msg << endl;
+    RCLCPP_INFO(this->get_logger(),
+                "Initialization complete (stream mode %s)",
+                vicon_receiver::stream_mode_name(stream_mode).c_str());
 
     return true;
 }
@@ -346,16 +345,12 @@ bool ViconReceiverNode::disconnect()
     vicon_client.DisableMarkerData();
     vicon_client.DisableMarkerRayData();
 
-    // Log disconnection attempt
-    string msg = "Disconnecting from " + hostname + "...";
-    cout << msg << endl;
+    RCLCPP_INFO(this->get_logger(), "Disconnecting from %s...", hostname.c_str());
 
     // Disconnect from the server
     vicon_client.Disconnect();
 
-    // Log successful disconnection
-    msg = "Successfully disconnected";
-    cout << msg << endl;
+    RCLCPP_INFO(this->get_logger(), "Successfully disconnected");
 
     // Verify disconnection
     return !vicon_client.IsConnected().Connected;
@@ -888,9 +883,11 @@ void ViconReceiverNode::create_segment_publisher(const std::string &subject_name
         vicon_receiver::make_segment_topic_name(ns_name, subject_name, segment_name);
     const std::string key = subject_name + "/" + segment_name;
 
-    // Log publisher creation
-    cout << "Creating publisher for segment " << segment_name << " from subject " << subject_name
-         << " on topic " << topic_name << endl;
+    RCLCPP_INFO(this->get_logger(),
+                "Creating publisher for segment %s from subject %s on topic %s",
+                segment_name.c_str(),
+                subject_name.c_str(),
+                topic_name.c_str());
 
     // Two segments whose names convert to the same tokens would share a topic: refuse the second
     const std::string topic_owner = topic_owners.owner_of(topic_name);
@@ -926,8 +923,8 @@ void ViconReceiverNode::create_segment_publisher(const std::string &subject_name
 // DEVNOTE: code location may be reevaluated in the future based on further developments.
 // SegmentPosePublisher: one PoseStamped publisher of a segment
 SegmentPosePublisher::SegmentPosePublisher(const std::string &topic_name, rclcpp::Node *node)
+    : position_publisher_(node->create_publisher<geometry_msgs::msg::PoseStamped>(topic_name, 10))
 {
-    position_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(topic_name, 10);
 }
 
 void SegmentPosePublisher::publish(const geometry_msgs::msg::PoseStamped &pose_msg)

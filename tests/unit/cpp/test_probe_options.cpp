@@ -28,7 +28,7 @@ namespace
     {
         try
         {
-            parse_probe_options(arguments);
+            static_cast<void>(parse_probe_options(arguments));
         }
         catch (const std::invalid_argument &error)
         {

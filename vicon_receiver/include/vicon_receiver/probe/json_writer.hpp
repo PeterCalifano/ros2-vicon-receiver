@@ -112,13 +112,13 @@ namespace vicon_probe
         }
 
         /// Whether exactly one top-level value has been written and every container is closed.
-        bool is_complete() const;
+        [[nodiscard]] bool is_complete() const;
 
         /// Escape a string for inclusion between JSON double quotes.
-        static std::string escape(const std::string &text);
+        [[nodiscard]] static std::string escape(const std::string &text);
 
         /// Format a number as JSON ("null" if it is not finite).
-        static std::string format_number(double number);
+        [[nodiscard]] static std::string format_number(double number);
 
       private:
         /// Kind of an open container.

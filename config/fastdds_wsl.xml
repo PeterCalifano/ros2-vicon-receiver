@@ -10,7 +10,7 @@
   redirected, plus shared memory for the data. Discovery uses that address as initial peer.
 
   Scope: ROS 2 traffic stays on this machine (no other hosts). Enabled automatically by
-  scripts/lib/dds.sh when the redirection is detected; keep the address in sync with
+  scripts/lib/ros_env.sh when the redirection is detected; keep the address in sync with
   VICON_WSL_LOOPBACK_ADDRESS there.
 -->
 <dds xmlns="http://www.eprosima.com">

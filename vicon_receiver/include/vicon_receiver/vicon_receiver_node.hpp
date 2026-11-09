@@ -6,19 +6,20 @@
  * @date 2026-10-30
  */
 
-#if !defined(VICON_RECEIVER_NODE_HPP)
+#ifndef VICON_RECEIVER_NODE_HPP
 #define VICON_RECEIVER_NODE_HPP
 
 #include "vicon-datastream-sdk/DataStreamClient.h"
 #include "rclcpp/rclcpp.hpp"
 #include "vicon_receiver/ros_conversions.hpp"
-#include <iostream>
-#include <map>
 #include <chrono>
+#include <cstddef>
+#include <map>
 #include <memory>
 #include <optional>
-#include <string>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
@@ -33,8 +34,6 @@
 #include "vicon_receiver/console_status_line.hpp"
 #include "vicon_receiver/utilities.hpp"
 #include "vicon_receiver_msgs/msg/vicon_frame.hpp"
-
-using namespace std;
 
 // DEVNOTE: code location may be reevaluated in the future based on further developments.
 // Class that allows segment data to be published in a ROS2 topic.
@@ -62,10 +61,12 @@ class ViconReceiverNode : public rclcpp::Node
   private:
     ViconDataStreamSDK::CPP::Client vicon_client;
 
-    string hostname;
-    unsigned int buffer_size;
-    string ns_name;
-    map<string, SegmentPosePublisher> pub_map;
+    // Parameters are set by the constructor from the parameters file (no defaults there); the
+    // initialisers below only rule out indeterminate values.
+    std::string hostname;
+    unsigned int buffer_size = 0;
+    std::string ns_name;
+    std::map<std::string, SegmentPosePublisher> pub_map;
     /// Segments ("subject/segment") whose publisher could not be created; never retried.
     std::set<std::string> failed_publishers;
     /// Owner ("subject/segment") of each topic, to refuse two segments on the same topic.
@@ -76,33 +77,34 @@ class ViconReceiverNode : public rclcpp::Node
     std::set<std::string> refused_tf_segments;
 
     geometry_msgs::msg::TransformStamped static_tf;
-    string world_frame;
-    string vicon_frame;
-    vector<double> map_xyz;
-    vector<double> map_rpy;
-    bool map_rpy_in_degrees;
+    std::string world_frame;
+    std::string vicon_frame;
+    std::vector<double> map_xyz;
+    std::vector<double> map_rpy;
+    bool map_rpy_in_degrees = false;
 
     // --- Streaming, stamping and telemetry parameters ---
     /// SDK stream mode (ServerPush keeps every frame; ClientPull asks for the latest one)
-    ViconDataStreamSDK::CPP::StreamMode::Enum stream_mode;
+    ViconDataStreamSDK::CPP::StreamMode::Enum stream_mode =
+        ViconDataStreamSDK::CPP::StreamMode::ServerPush;
     /// Read the labeled markers of every subject into ViconFrame
-    bool enable_marker_data;
+    bool enable_marker_data = false;
     /// Read the cameras that saw each marker (needs marker data)
-    bool enable_marker_ray_data;
+    bool enable_marker_ray_data = false;
     /// Period of the console status line [s]; 0 disables it
-    double status_period_s;
+    double status_period_s = 0.0;
     /// Depth of the ViconFrame publisher queue (frames kept for a slow subscriber)
-    std::size_t frame_queue_depth;
+    std::size_t frame_queue_depth = 0;
     /// Duration of one local-clock-rate measurement [s]
-    double clock_check_measurement_s;
+    double clock_check_measurement_s = 0.0;
     /// Relative clock rate error that triggers a warning (0.01 = 1 %)
-    double clock_rate_warning_limit;
+    double clock_rate_warning_limit = 0.0;
     /// Seconds without answer from the server before the connection counts as lost
-    int connection_timeout_s;
+    int connection_timeout_s = 0;
     /// Pause between two connection attempts [s]
-    double connect_retry_period_s;
+    double connect_retry_period_s = 0.0;
     /// Pause before asking again when the server has no frame [s]
-    double no_frame_pause_s;
+    double no_frame_pause_s = 0.0;
 
     // --- Frame processing state ---
     /// Holds back the frames left over from the server's previous session after connecting
@@ -221,10 +223,10 @@ class ViconReceiverNode : public rclcpp::Node
     explicit ViconReceiverNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
     // Initialises the connection to the DataStream server
-    bool connect();
+    [[nodiscard]] bool connect();
 
     // Stops the current connection to a DataStream server (if any).
-    bool disconnect();
+    [[nodiscard]] bool disconnect();
 
     /**
      * @brief Receive one frame and publish it.
@@ -237,7 +239,7 @@ class ViconReceiverNode : public rclcpp::Node
      * @return false if the connection to the server is lost (no reconnection: the caller stops),
      *         true otherwise (frame published, or no frame available yet).
      */
-    bool get_frame();
+    [[nodiscard]] bool get_frame();
 
     /**
      * @brief Receive and publish frames (get_frame()) until ROS 2 shuts down or the connection
@@ -246,7 +248,7 @@ class ViconReceiverNode : public rclcpp::Node
      * @return 0 when ROS 2 was shut down (Ctrl+C); kConnectionLostExitStatus when the connection
      *         was lost (logged as FATAL; no reconnection, e.g. for a supervisor to restart the node).
      */
-    int run_frame_loop();
+    [[nodiscard]] int run_frame_loop();
 };
 
 #endif // VICON_RECEIVER_NODE_HPP

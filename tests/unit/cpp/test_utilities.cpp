@@ -175,9 +175,9 @@ namespace tcp_keepalive_tests
 
     TEST(TcpKeepalive, InvalidServerPortIsRejected)
     {
-        EXPECT_THROW(server_port("host:"), std::invalid_argument);
-        EXPECT_THROW(server_port("host:80a"), std::invalid_argument);
-        EXPECT_THROW(server_port("host:70000"), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(server_port("host:")), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(server_port("host:80a")), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(server_port("host:70000")), std::invalid_argument);
     }
 
     // ---------------------------------------------------------------------------------------------

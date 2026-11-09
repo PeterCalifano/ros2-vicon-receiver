@@ -43,22 +43,22 @@ namespace vicon_receiver
      * @param vicon_name  Subject or segment name as reported by the Vicon DataStream SDK.
      * @return A token valid in ROS 2 topic names and TF frame ids.
      */
-    std::string to_ros_name_token(const std::string &vicon_name);
+    [[nodiscard]] std::string to_ros_name_token(const std::string &vicon_name);
 
     /**
      * @brief TF child frame id of a segment: "<subject>_<segment>", both parts converted with
      *        to_ros_name_token().
      */
-    std::string make_segment_frame_id(const std::string &subject_name,
-                                      const std::string &segment_name);
+    [[nodiscard]] std::string make_segment_frame_id(const std::string &subject_name,
+                                                    const std::string &segment_name);
 
     /**
      * @brief Topic name of a segment pose: "<topic_namespace>/<subject>/<segment>", subject and
      *        segment converted with to_ros_name_token(). The namespace is used as given.
      */
-    std::string make_segment_topic_name(const std::string &topic_namespace,
-                                        const std::string &subject_name,
-                                        const std::string &segment_name);
+    [[nodiscard]] std::string make_segment_topic_name(const std::string &topic_namespace,
+                                                      const std::string &subject_name,
+                                                      const std::string &segment_name);
 
     /**
      * @brief First-come ownership of the ROS names derived from Vicon names (topics, TF frames).
@@ -77,7 +77,7 @@ namespace vicon_receiver
         bool claim(const std::string &name, const std::string &owner);
 
         /// Owner of @p name, empty if nobody claimed it.
-        std::string owner_of(const std::string &name) const;
+        [[nodiscard]] std::string owner_of(const std::string &name) const;
 
       private:
         std::map<std::string, std::string> owners_;
@@ -102,7 +102,7 @@ namespace vicon_receiver
      * @param translation   Result of GetSegmentGlobalTranslation.
      * @param rotation      Result of GetSegmentGlobalRotationQuaternion.
      */
-    vicon_receiver_msgs::msg::SegmentState make_segment_state(
+    [[nodiscard]] vicon_receiver_msgs::msg::SegmentState make_segment_state(
         const std::string &segment_name,
         const std::string &frame_id,
         const ViconDataStreamSDK::CPP::Output_GetSegmentGlobalTranslation &translation,
@@ -118,7 +118,7 @@ namespace vicon_receiver
      * @param translation     Result of GetMarkerGlobalTranslation.
      * @param camera_ids      Cameras whose rays reconstructed the marker.
      */
-    vicon_receiver_msgs::msg::MarkerState
+    [[nodiscard]] vicon_receiver_msgs::msg::MarkerState
     make_marker_state(const std::string &marker_name,
                       const std::string &parent_segment,
                       const ViconDataStreamSDK::CPP::Output_GetMarkerGlobalTranslation &translation,
@@ -130,7 +130,7 @@ namespace vicon_receiver
      * False when the translation or the rotation is occluded, and when the quaternion is not of
      * unit norm (Vicon sends [0, 0, 0, 0] for occluded segments).
      */
-    bool is_valid_pose(const vicon_receiver_msgs::msg::SegmentState &segment);
+    [[nodiscard]] bool is_valid_pose(const vicon_receiver_msgs::msg::SegmentState &segment);
 
     /**
      * @brief Transform from the parent frame to the segment frame, for TF.
@@ -139,7 +139,7 @@ namespace vicon_receiver
      * @param parent_frame  Frame the pose is expressed in (the Vicon frame).
      * @param stamp         Stamp of the transform (estimated acquisition time).
      */
-    geometry_msgs::msg::TransformStamped
+    [[nodiscard]] geometry_msgs::msg::TransformStamped
     make_segment_transform(const vicon_receiver_msgs::msg::SegmentState &segment,
                            const std::string &parent_frame,
                            const builtin_interfaces::msg::Time &stamp);
@@ -152,7 +152,7 @@ namespace vicon_receiver
      *                        header.frame_id becomes the frame of the result.
      * @param stamp           Stamp of the pose (estimated acquisition time).
      */
-    geometry_msgs::msg::PoseStamped
+    [[nodiscard]] geometry_msgs::msg::PoseStamped
     make_segment_pose_in_world(const vicon_receiver_msgs::msg::SegmentState &segment,
                                const geometry_msgs::msg::TransformStamped &vicon_in_world,
                                const builtin_interfaces::msg::Time &stamp);
@@ -162,10 +162,10 @@ namespace vicon_receiver
      *
      * @throws std::invalid_argument if the time is negative or not finite.
      */
-    builtin_interfaces::msg::Time to_time_msg(double seconds);
+    [[nodiscard]] builtin_interfaces::msg::Time to_time_msg(double seconds);
 
     /// Seconds since the epoch from a ROS time message.
-    double to_seconds(const builtin_interfaces::msg::Time &time);
+    [[nodiscard]] double to_seconds(const builtin_interfaces::msg::Time &time);
 } // namespace vicon_receiver
 
 #endif // VICON_RECEIVER_ROS_CONVERSIONS_HPP
